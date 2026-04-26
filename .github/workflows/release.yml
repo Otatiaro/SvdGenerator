@@ -63,6 +63,27 @@ jobs:
             -p:DebugType=embedded \
             -o out/${{ matrix.rid }}
 
+      - name: Smoke-test the published binary
+        shell: bash
+        # Validate the freshly built single-file binary actually runs on its
+        # native platform. Catches PublishSingleFile/trim/runtime breakage
+        # that 'dotnet build' alone cannot see.
+        env:
+          SVD_DATA_REF: c65f8551e57c770344d229dcaa0bf838fa29aff4
+          SVD_VENDOR: STMicro
+          SVD_FILE: STM32F401.svd
+        run: |
+          set -euo pipefail
+          BIN="out/${{ matrix.rid }}/SvdGenerator${{ matrix.ext }}"
+          "$BIN" --version
+          mkdir -p smoke_in smoke_out
+          curl -fsSL \
+            "https://raw.githubusercontent.com/cmsis-svd/cmsis-svd-data/${SVD_DATA_REF}/data/${SVD_VENDOR}/${SVD_FILE}" \
+            -o "smoke_in/${SVD_FILE}"
+          "$BIN" "smoke_in/${SVD_FILE}" smoke_out
+          test -f smoke_out/interrupts.hpp
+          test -f smoke_out/gpio.hpp
+
       - name: Stage artifact
         shell: bash
         run: |
