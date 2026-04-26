@@ -93,10 +93,18 @@ namespace SvdGenerator
             }
 
 
+            // Dedupe: an SVD can list the same IRQ on every peripheral that
+            // shares it (e.g. TIM1_UP_TIM10_IRQn appears on TIM1 and TIM10),
+            // and some SVDs even repeat an entry on a single peripheral with
+            // slightly different descriptions (FPU). One enumerator per
+            // (name, value) is what the C++ enum needs.
             var interrupts = device.peripherals
                 .Where(p => p.interrupt != null)
                 .SelectMany(p => p.interrupt)
+                .GroupBy(i => (i.name, i.value))
+                .Select(g => g.First())
                 .OrderBy(i => i.value.ToValue())
+                .ThenBy(i => i.name)
                 .ToArray();
 
             var irqMaxSize = interrupts.Select(i => i.name.Length).Max();
