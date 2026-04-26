@@ -267,47 +267,16 @@ public partial class peripheralType
         sb.AppendLine($"class {className} {{");
         sb.AppendLine($"public:");
 
-        // Pre-expand <dim>-arrayed registers (CMSIS-SVD `name%s` form)
-        // once and reuse the same list everywhere this method enumerates
-        // registers, so equivalence detection, layout walking and the
-        // offsetof static_asserts all see the expanded names.
-        // Then drop any register whose span lies strictly inside a wider
-        // sibling at an earlier offset — Atmel/Microchip and NXP Kinetis
-        // SVDs declare byte/half access aliases of a 32-bit register at
-        // offsets 1/2/3 within the primary register's footprint, which
-        // we cannot represent without nested unions yet. Multiple registers
-        // at the same offset are kept (those become a normal union).
+        // Pre-expand <dim>-arrayed registers (CMSIS-SVD `name%s` form) and
+        // sort them. The same expanded list feeds register-class
+        // equivalence detection, layout walking and the offsetof
+        // static_asserts so all three see identical names.
         var expanded = registers?
             .OfType<registerType>()
             .SelectMany(r => r.Expand())
             .OrderBy(r => r.addressOffset.ToValue())
             .ThenByDescending(r => r.BitSize)
             .ToList();
-
-        if (expanded != null)
-        {
-            var kept = new List<registerType>(expanded.Count);
-            long primaryOffset = -1;
-            long primaryEnd = 0;
-            foreach (var r in expanded)
-            {
-                var off = r.addressOffset.ToValue();
-                var sizeBytes = r.BitSize / 8;
-                if (off == primaryOffset)
-                {
-                    kept.Add(r);
-                    primaryEnd = Math.Max(primaryEnd, off + sizeBytes);
-                }
-                else if (off >= primaryEnd)
-                {
-                    kept.Add(r);
-                    primaryOffset = off;
-                    primaryEnd = off + sizeBytes;
-                }
-                // else: alias inside the primary register's span, drop
-            }
-            expanded = kept;
-        }
 
         if (expanded != null)
         {
@@ -351,59 +320,59 @@ public partial class peripheralType
 
             sb.AppendLine();
 
+            // Walk the registers as a sequence of "footprint groups": each
+            // group is a maximal run of registers whose byte spans
+            // transitively overlap. A group with one register lays out
+            // flat. A group with several registers becomes an anonymous
+            // union of lanes (interval coloring), with each multi-register
+            // lane wrapped in an anonymous struct so byte/half/word
+            // aliases of the same register coexist as fields on the
+            // peripheral. Single-register lanes skip the struct wrapper.
             long currentOffset = 0;
+            var paddingId = 0;
 
-            var request = expanded
-                .GroupBy(r => r.addressOffset.ToValue())
-                .OrderBy(r => r.Key);
-
-
-            foreach (var group in request)
+            foreach (var group in BuildFootprintGroups(expanded))
             {
-                if (group.Count() > 1)
-                    sb.AppendLine("\tunion {");
+                var groupStart = group[0].addressOffset.ToValue();
+                var groupEnd = group.Max(r => r.addressOffset.ToValue() + r.BitSize / 8);
 
-                var padding = group.Key - currentOffset;
+                var leadingPadding = groupStart - currentOffset;
+                if (leadingPadding > 0)
+                    sb.AppendLine($"\topsy::utility::padding<{leadingPadding}> _p{paddingId++};");
 
-                if (padding < 0)
-                    throw new Exception();
+                var lanes = PartitionLanes(group);
 
-                if (padding != 0)
-                    sb.AppendLine($"\topsy::utility::padding<{padding}> _p{currentOffset};");
-
-                var size = 0;
-
-                foreach (var register in group)
+                if (lanes.Count == 1)
                 {
-                    switch (register.accessSpecified ? register.access : accessType.readwrite)
+                    EmitLaneMembers(sb, lanes[0], groupStart, classNames, ref paddingId, "\t");
+                }
+                else
+                {
+                    sb.AppendLine("\tunion {");
+                    foreach (var lane in lanes)
                     {
-                        case accessType.@readonly:
-                            sb.AppendLine($"\topsy::utility::read_only_memory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
-                            break;
-                        case accessType.writeonly:
-                            sb.AppendLine($"\topsy::utility::write_only_memory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
-                            break;
-                        default:
-                        case accessType.readwrite:
-                            sb.AppendLine($"\topsy::utility::memory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
-                            break;
-                        case accessType.writeOnce:
-                            sb.AppendLine($"\topsy::utility::write_only_memory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
-                            break;
-                        case accessType.readwriteOnce:
-                            sb.AppendLine($"\topsy::utility::memory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
-                            break;
+                        // A struct wrapper is needed whenever a lane carries
+                        // intra-lane padding — i.e. either has multiple
+                        // registers (gaps possible) or a single register that
+                        // does not start at the group's offset (leading
+                        // padding required to push it forward inside the
+                        // union).
+                        var bare = lane.Count == 1 && lane[0].addressOffset.ToValue() == groupStart;
+                        if (bare)
+                        {
+                            EmitLaneMembers(sb, lane, groupStart, classNames, ref paddingId, "\t\t");
+                        }
+                        else
+                        {
+                            sb.AppendLine("\t\tstruct {");
+                            EmitLaneMembers(sb, lane, groupStart, classNames, ref paddingId, "\t\t\t");
+                            sb.AppendLine("\t\t};");
+                        }
                     }
-
-                    if (register.BitSize > size)
-                        size = register.BitSize;
+                    sb.AppendLine("\t};");
                 }
 
-                if (group.Count() > 1)
-                    sb.AppendLine("\t};");
-
-
-                currentOffset += (size / 8) + padding;
+                currentOffset = groupEnd;
             }
         }
 
@@ -423,5 +392,84 @@ public partial class peripheralType
 
         sb.AppendLine();
         return sb.ToString();
+    }
+
+    // Build maximal runs of registers whose byte spans transitively overlap.
+    // Input: registers sorted by offset asc, then size desc.
+    // Output: groups in offset-asc order; within a group, the same sort.
+    static List<List<registerType>> BuildFootprintGroups(List<registerType> sorted)
+    {
+        var groups = new List<List<registerType>>();
+        long currentEnd = -1;
+        foreach (var r in sorted)
+        {
+            var start = r.addressOffset.ToValue();
+            var end = start + r.BitSize / 8;
+            if (groups.Count == 0 || start >= currentEnd)
+            {
+                groups.Add(new List<registerType> { r });
+                currentEnd = end;
+            }
+            else
+            {
+                groups[^1].Add(r);
+                if (end > currentEnd) currentEnd = end;
+            }
+        }
+        return groups;
+    }
+
+    // Greedy interval coloring on a single footprint group. With the input
+    // sorted (offset asc, size desc) the largest register lands in lane 0,
+    // halfword aliases collapse into lane 1, byte aliases into lane 2.
+    static List<List<registerType>> PartitionLanes(List<registerType> group)
+    {
+        var lanes = new List<List<registerType>>();
+        var laneEnds = new List<long>();
+        foreach (var r in group)
+        {
+            var start = r.addressOffset.ToValue();
+            var end = start + r.BitSize / 8;
+            var idx = -1;
+            for (var i = 0; i < laneEnds.Count; i++)
+            {
+                if (laneEnds[i] <= start) { idx = i; break; }
+            }
+            if (idx == -1)
+            {
+                idx = lanes.Count;
+                lanes.Add(new List<registerType>());
+                laneEnds.Add(0);
+            }
+            lanes[idx].Add(r);
+            laneEnds[idx] = end;
+        }
+        return lanes;
+    }
+
+    // Emit a sequence of registers belonging to one lane, inserting padding
+    // for any internal gap between consecutive registers.
+    static void EmitLaneMembers(
+        StringBuilder sb, List<registerType> lane, long laneStart,
+        Dictionary<registerType, string> classNames, ref int paddingId, string indent)
+    {
+        var cursor = laneStart;
+        foreach (var r in lane)
+        {
+            var off = r.addressOffset.ToValue();
+            if (off > cursor)
+                sb.AppendLine($"{indent}opsy::utility::padding<{off - cursor}> _p{paddingId++};");
+
+            var template = (r.accessSpecified ? r.access : accessType.readwrite) switch
+            {
+                accessType.@readonly => "opsy::utility::read_only_memory",
+                accessType.writeonly => "opsy::utility::write_only_memory",
+                accessType.writeOnce => "opsy::utility::write_only_memory",
+                _ => "opsy::utility::memory",
+            };
+            sb.AppendLine($"{indent}{template}<{r.BitSize.ToType()},{classNames[r]}> {r.FieldName()};");
+
+            cursor = off + r.BitSize / 8;
+        }
     }
 }
