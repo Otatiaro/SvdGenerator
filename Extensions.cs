@@ -260,6 +260,10 @@ public partial class peripheralType
 
         var sb = new StringBuilder();
         var classNames = new Dictionary<registerType, string>();
+        // Each register's offsetof access path on the peripheral class:
+        // either a bare field name, or "_lane_N.field" when the register
+        // sits inside a named lane struct.
+        var accessPath = new Dictionary<registerType, string>();
 
         sb.AppendLine($"/**");
         sb.AppendLine($" * {description.ToOneLine()}");
@@ -322,14 +326,20 @@ public partial class peripheralType
 
             // Walk the registers as a sequence of "footprint groups": each
             // group is a maximal run of registers whose byte spans
-            // transitively overlap. A group with one register lays out
-            // flat. A group with several registers becomes an anonymous
-            // union of lanes (interval coloring), with each multi-register
-            // lane wrapped in an anonymous struct so byte/half/word
-            // aliases of the same register coexist as fields on the
-            // peripheral. Single-register lanes skip the struct wrapper.
+            // transitively overlap. Single-register groups lay out flat.
+            // Multi-register groups become an anonymous union of lanes
+            // (interval coloring). A lane that is a single register at
+            // the group's offset rides directly inside the anonymous
+            // union (non-POD member is fine in an anonymous union by
+            // standard C++); any other lane has to live in a NAMED
+            // struct field (`struct { ... } _lane_N;`) because GCC's
+            // anonymous-struct extension forbids non-POD members and
+            // opsy::utility::memory holds a std::atomic, so it is not
+            // POD. Trade-off: byte/half aliases get accessed as
+            // `peripheral._lane_N.fooN` instead of `peripheral.fooN`.
             long currentOffset = 0;
             var paddingId = 0;
+            var laneId = 0;
 
             foreach (var group in BuildFootprintGroups(expanded))
             {
@@ -344,6 +354,7 @@ public partial class peripheralType
 
                 if (lanes.Count == 1)
                 {
+                    foreach (var r in lanes[0]) accessPath[r] = r.FieldName();
                     EmitLaneMembers(sb, lanes[0], groupStart, classNames, ref paddingId, "\t");
                 }
                 else
@@ -351,22 +362,19 @@ public partial class peripheralType
                     sb.AppendLine("\tunion {");
                     foreach (var lane in lanes)
                     {
-                        // A struct wrapper is needed whenever a lane carries
-                        // intra-lane padding — i.e. either has multiple
-                        // registers (gaps possible) or a single register that
-                        // does not start at the group's offset (leading
-                        // padding required to push it forward inside the
-                        // union).
                         var bare = lane.Count == 1 && lane[0].addressOffset.ToValue() == groupStart;
                         if (bare)
                         {
+                            accessPath[lane[0]] = lane[0].FieldName();
                             EmitLaneMembers(sb, lane, groupStart, classNames, ref paddingId, "\t\t");
                         }
                         else
                         {
+                            var laneName = $"_lane_{laneId++}";
+                            foreach (var r in lane) accessPath[r] = $"{laneName}.{r.FieldName()}";
                             sb.AppendLine("\t\tstruct {");
                             EmitLaneMembers(sb, lane, groupStart, classNames, ref paddingId, "\t\t\t");
-                            sb.AppendLine("\t\t};");
+                            sb.AppendLine($"\t\t}} {laneName};");
                         }
                     }
                     sb.AppendLine("\t};");
@@ -384,10 +392,7 @@ public partial class peripheralType
             sb.AppendLine();
             sb.AppendLine($"static_assert(std::is_standard_layout_v<{className}>);");
             foreach (var register in expanded)
-            {
-                var offset = register.addressOffset.ToValue();
-                sb.AppendLine($"static_assert(offsetof({className}, {register.FieldName()}) == {register.Offset});");
-            }
+                sb.AppendLine($"static_assert(offsetof({className}, {accessPath[register]}) == {register.Offset});");
         }
 
         sb.AppendLine();
