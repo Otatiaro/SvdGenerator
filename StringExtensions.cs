@@ -8,7 +8,13 @@ public static class StringExtensions
 {
     public const string OffsetType = "std::size_t";
     public const string WidthType = "std::size_t";
-    public static readonly string[] Keywords = { "and", "or" };
+
+    // Names that must not appear unprefixed as field accessors on a
+    // register class, either because they are real C++ keywords (and / or)
+    // or because they would shadow a method the register class itself
+    // defines (value() returns the underlying integer and is part of the
+    // contract consumed by opsy::utility::memory).
+    public static readonly string[] Keywords = { "and", "or", "value" };
 
     public static bool IsKeyword(this string str) => Keywords.Contains(str.ToLowerInvariant());
 
