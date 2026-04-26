@@ -10,11 +10,35 @@ public static class StringExtensions
     public const string WidthType = "std::size_t";
 
     // Names that must not appear unprefixed as field accessors on a
-    // register class, either because they are real C++ keywords (and / or)
-    // or because they would shadow a method the register class itself
-    // defines (value() returns the underlying integer and is part of the
-    // contract consumed by opsy::utility::memory).
-    public static readonly string[] Keywords = { "and", "or", "value" };
+    // register class. Two categories:
+    //  - Real C++ reserved keywords. SVD authors do reuse them as field
+    //    names (RP2040 has fields named INT and SIGNED, SAMD21 has INT
+    //    too), and emitting `auto int() const` is a syntax error.
+    //  - Identifiers the register class itself defines (value() returns
+    //    the underlying integer and is part of the contract consumed by
+    //    opsy::utility::memory).
+    private static readonly HashSet<string> Keywords = new(StringComparer.Ordinal)
+    {
+        // C++ reserved keywords (C++23 set, identifier-shaped only).
+        "alignas", "alignof", "and", "and_eq", "asm", "auto",
+        "bitand", "bitor", "bool", "break", "case", "catch",
+        "char", "char8_t", "char16_t", "char32_t", "class", "compl",
+        "concept", "const", "consteval", "constexpr", "constinit",
+        "const_cast", "continue", "co_await", "co_return", "co_yield",
+        "decltype", "default", "delete", "do", "double", "dynamic_cast",
+        "else", "enum", "explicit", "export", "extern", "false",
+        "float", "for", "friend", "goto", "if", "inline",
+        "int", "long", "mutable", "namespace", "new", "noexcept",
+        "not", "not_eq", "nullptr", "operator", "or", "or_eq",
+        "private", "protected", "public", "register", "reinterpret_cast",
+        "requires", "return", "short", "signed", "sizeof", "static",
+        "static_assert", "static_cast", "struct", "switch", "template",
+        "this", "thread_local", "throw", "true", "try", "typedef",
+        "typeid", "typename", "union", "unsigned", "using", "virtual",
+        "void", "volatile", "wchar_t", "while", "xor", "xor_eq",
+        // Register-class-internal identifiers we emit ourselves.
+        "value",
+    };
 
     public static bool IsKeyword(this string str) => Keywords.Contains(str.ToLowerInvariant());
 
