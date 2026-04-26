@@ -2,7 +2,6 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <OutputType>Exe</OutputType>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <AssemblyTitle>SvdGenerator</AssemblyTitle>
     <Product>SvdGenerator</Product>
     <Copyright>Copyright (c) 2019-2026 Thomas Legrand</Copyright>

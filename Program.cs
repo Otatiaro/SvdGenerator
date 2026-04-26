@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Xml.Serialization;
 
@@ -9,22 +10,33 @@ namespace SvdGenerator
 {
     class Program
     {
-        static void Main(string[] args)
+        static int Main(string[] args)
         {
+            if (args.Length == 1 && (args[0] == "--version" || args[0] == "-v"))
+            {
+                Console.WriteLine($"SvdGenerator {InformationalVersion}");
+                return 0;
+            }
+
+            if (args.Any(a => a == "--help" || a == "-h"))
+            {
+                PrintUsage(Console.Out);
+                return 0;
+            }
+
             if (args.Length != 2)
             {
-                Console.WriteLine("Call with SVD file and output directory to generate the C++ code");
-                return;
+                PrintUsage(Console.Error);
+                return 1;
             }
 
             var input = args[0];
             var output = args[1];
 
-
             if (!File.Exists(input))
             {
-                Console.WriteLine($"Can't find file {input}");
-                return;
+                Console.Error.WriteLine($"Can't find file {input}");
+                return 1;
             }
 
             var serializer = new XmlSerializer(typeof(device));
@@ -35,15 +47,29 @@ namespace SvdGenerator
 
             if (device == null)
             {
-                Console.WriteLine($"Can't deserialize file {input}");
-                return;
+                Console.Error.WriteLine($"Can't deserialize file {input}");
+                return 1;
             }
 
             if (Directory.Exists(output))
+            {
+                // Avoid clobbering anything we did not generate ourselves —
+                // a typo like `SvdGenerator foo.svd .` should not silently
+                // wipe a working directory.
+                var stranger = Directory.EnumerateFiles(output)
+                    .FirstOrDefault(f => !f.EndsWith(".hpp", StringComparison.OrdinalIgnoreCase));
+                if (stranger != null)
+                {
+                    Console.Error.WriteLine($"Refusing to clean '{output}': it contains a non-.hpp file ('{Path.GetFileName(stranger)}'). Pass an empty directory or one that only holds previously generated headers.");
+                    return 2;
+                }
                 foreach (var file in Directory.EnumerateFiles(output))
                     File.Delete(file);
+            }
             else
+            {
                 Directory.CreateDirectory(output);
+            }
 
 
             var grouping = device.peripherals
@@ -133,6 +159,24 @@ namespace SvdGenerator
             var intFile = Path.Combine(output, "interrupts.hpp");
             File.WriteAllText(intFile, sb.ToString());
 
+            return 0;
+        }
+
+        static string InformationalVersion =>
+            typeof(Program).Assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion ?? "unknown";
+
+        static void PrintUsage(TextWriter w)
+        {
+            w.WriteLine("Usage: SvdGenerator <input.svd> <output_dir>");
+            w.WriteLine();
+            w.WriteLine("Generates typed C++ peripheral headers for ARM Cortex-M targets");
+            w.WriteLine("from a CMSIS-SVD file.");
+            w.WriteLine();
+            w.WriteLine("Options:");
+            w.WriteLine("  -h, --help     Show this help and exit.");
+            w.WriteLine("  -v, --version  Show version and exit.");
         }
     }
 }
