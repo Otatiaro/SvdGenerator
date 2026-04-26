@@ -16,10 +16,10 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore
+        run: dotnet restore SvdGenerator.csproj
 
       - name: Build
-        run: dotnet build -c Release --no-restore
+        run: dotnet build SvdGenerator.csproj -c Release --no-restore
 
       - name: Format check
-        run: dotnet format --verify-no-changes --no-restore
+        run: dotnet format SvdGenerator.csproj --verify-no-changes --no-restore
