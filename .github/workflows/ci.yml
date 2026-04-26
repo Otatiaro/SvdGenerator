@@ -23,3 +23,55 @@ jobs:
 
       - name: Format check
         run: dotnet format SvdGenerator.csproj --verify-no-changes --no-restore
+
+  smoke:
+    name: smoke (generate + g++ syntax-check)
+    runs-on: ubuntu-latest
+    # Bump these to refresh the upstream sources the smoke compiles against.
+    env:
+      OPSY_REF: 9df189a2dc78ff306d8982fc025e164371c5d3fc
+      SVD_DATA_REF: c65f8551e57c770344d229dcaa0bf838fa29aff4
+      SVD_VENDOR: STMicro
+      SVD_FILE: STM32F401.svd
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build SvdGenerator
+        run: dotnet build SvdGenerator.csproj -c Release
+
+      - name: Fetch SVD
+        run: |
+          mkdir -p svd
+          curl -fsSL \
+            "https://raw.githubusercontent.com/cmsis-svd/cmsis-svd-data/${SVD_DATA_REF}/data/${SVD_VENDOR}/${SVD_FILE}" \
+            -o "svd/${SVD_FILE}"
+
+      - name: Generate peripheral headers
+        run: |
+          mkdir -p out
+          dotnet run --project SvdGenerator.csproj -c Release --no-build --no-launch-profile -- \
+            "svd/${SVD_FILE}" out
+
+      - name: Drop opsy memory.hpp next to the generated headers
+        # The generator runs first because Program.cs wipes the output dir;
+        # we add the local memory.hpp afterwards so __has_include picks it up.
+        run: |
+          curl -fsSL \
+            "https://raw.githubusercontent.com/Otatiaro/OpSy/${OPSY_REF}/utility/memory.hpp" \
+            -o "out/memory.hpp"
+
+      - name: g++ syntax-check every generated header
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in out/*.hpp; do
+            [ "$(basename "$f")" = "memory.hpp" ] && continue
+            echo "::group::$f"
+            g++ -std=c++20 -Wall -Wextra -fsyntax-only -Iout -x c++-header "$f" || fail=1
+            echo "::endgroup::"
+          done
+          exit "$fail"
