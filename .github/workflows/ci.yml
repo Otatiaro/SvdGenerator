@@ -68,6 +68,8 @@ jobs:
         # Compile a 1-line TU that #includes the header rather than passing
         # the .hpp as the main file. That mirrors real downstream usage and
         # avoids the spurious "#pragma once in main file" diagnostic.
+        # Warning set mirrors the strictest flags opsy itself ships with so
+        # a regression that would break a real BSP build is caught here.
         run: |
           set -uo pipefail
           fail=0
@@ -75,8 +77,11 @@ jobs:
             name=$(basename "$f")
             if [ "$name" = "memory.hpp" ]; then continue; fi
             echo "::group::$name"
-            if ! printf '#include "%s"\n' "$name" \
-                | g++ -std=c++20 -Wall -Wextra -fsyntax-only -Iout -x c++ -; then
+            if ! printf '#include "%s"\n' "$name" | g++ \
+                -std=c++20 \
+                -Wall -Wextra -Wshadow -Wcast-align -Wconversion \
+                -Wsign-conversion -Wdouble-promotion -Werror \
+                -fsyntax-only -Iout -x c++ -; then
               fail=1
             fi
             echo "::endgroup::"
