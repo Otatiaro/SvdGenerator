@@ -7,16 +7,6 @@ using System.Xml.Serialization;
 
 namespace SvdGenerator
 {
-    public partial class Memory
-    {
-        public Memory(device? device)
-        {
-            Device = device;
-        }
-        public device? Device { get; }
-    }
-
-
     class Program
     {
         static void Main(string[] args)
@@ -56,8 +46,6 @@ namespace SvdGenerator
                 Directory.CreateDirectory(output);
             
 
-            File.WriteAllText(Path.Combine(output, "Memory.hpp"), new Memory(device).TransformText());
-
             var grouping = device.peripherals
                 .Where(p => string.IsNullOrEmpty(p.derivedFrom))
                 .Select(p => (p, device.peripherals.Where(p2 => p2.derivedFrom == p.name).Append(p).OrderBy(p2 => p2.name)))
@@ -68,7 +56,7 @@ namespace SvdGenerator
             {
                 // there is only one "base class" in the group, make it the name of the group
                 var file = Path.Combine(output, group.Key.FileName());
-                File.WriteAllLines(file, new []{"#pragma once", "", "#include \"Memory.hpp\"", "", $"namespace {device.ToNamespace()}", "{", ""});
+                File.WriteAllLines(file, new []{"#pragma once", "", "#include <utility/memory.hpp>", "", $"namespace {device.ToNamespace()}", "{", ""});
                 File.AppendAllText(file, group.First().p.ClassDefinition(group.Key.PeripheralName()));
                 foreach (var periph in group.First().Item2)
                     File.AppendAllLines(file, new []{$"inline {group.Key.PeripheralName()}& {periph.PeriphName()} = *reinterpret_cast<{group.Key.PeripheralName()}*>({periph.baseAddress.ToValue().ToHex()});"});
@@ -80,7 +68,7 @@ namespace SvdGenerator
             {
                 // there are multiple "base classes" in the same group (like TIM where some timers have slightly different configurations)
                 var file = Path.Combine(output, group.Key.FileName());
-                File.WriteAllLines(file, new[] { "#pragma once", "", "#include \"Memory.hpp\"", "", $"namespace {device.ToNamespace()}", "{", "" });
+                File.WriteAllLines(file, new[] { "#pragma once", "", "#include <utility/memory.hpp>", "", $"namespace {device.ToNamespace()}", "{", "" });
 
                 foreach (var tuple in group)
                     File.AppendAllText(file, tuple.p.ClassDefinition());
@@ -122,7 +110,7 @@ namespace SvdGenerator
             sb.AppendLine("#include <cstddef>");
 
             sb.AppendLine();
-            sb.AppendLine($"constexpr std::size_t IrqCount = {irqMax + 1};");
+            sb.AppendLine($"constexpr std::size_t irq_count = {irqMax + 1};");
             sb.AppendLine();
 
             sb.AppendLine("enum IRQn_Type");

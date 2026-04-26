@@ -23,39 +23,39 @@ public partial class fieldType
         sb.AppendLine($"class {this.ClassName()} {{");
         sb.AppendLine($"public:");
 
-        sb.AppendLine($"\tstatic constexpr {OffsetType} Offset = {offset};");
-        sb.AppendLine($"\tstatic constexpr {WidthType} Width = {width};");
+        sb.AppendLine($"\tstatic constexpr {OffsetType} offset = {offset};");
+        sb.AppendLine($"\tstatic constexpr {WidthType} width = {width};");
 
         if (width != 1)
         {
-            sb.AppendLine($"\tstatic constexpr {width.ToInt()} Range = static_cast<{width.ToInt()}>({width.Range()});");
-            sb.AppendLine($"\tstatic constexpr {(width + offset).ToInt()} Mask = static_cast<{(width + offset).ToInt()}>(static_cast<{(width + offset).ToType()}>(Range) << Offset);");
+            sb.AppendLine($"\tstatic constexpr {width.ToInt()} range = static_cast<{width.ToInt()}>({width.Range()});");
+            sb.AppendLine($"\tstatic constexpr {(width + offset).ToInt()} mask = static_cast<{(width + offset).ToInt()}>(static_cast<{(width + offset).ToType()}>(range) << offset);");
         }
         else
         {
-            sb.AppendLine($"\tstatic constexpr {(width + offset).ToInt()} Mask = static_cast<{(width + offset).ToInt()}>(1ULL << Offset);");
+            sb.AppendLine($"\tstatic constexpr {(width + offset).ToInt()} mask = static_cast<{(width + offset).ToInt()}>(1ULL << offset);");
         }
 
         sb.AppendLine();
-        var rangeCheck = width.ExactType() ? "" : " & Range";
+        var rangeCheck = width.ExactType() ? "" : " & range";
         var defaultValue = width == 1 ? " = true" : "";
-        sb.AppendLine($"\tconstexpr {this.ClassName()}({width.ToType()} value{defaultValue}) : m_value(value{rangeCheck}) {{}}");
-        sb.AppendLine($"\tconstexpr operator {width.ToType()}() const {{return m_value;}}");
+        sb.AppendLine($"\tconstexpr {this.ClassName()}({width.ToType()} value{defaultValue}) : value_(value{rangeCheck}) {{}}");
+        sb.AppendLine($"\tconstexpr operator {width.ToType()}() const {{return value_;}}");
 
         if (regClassName != null)
         {
             sb.AppendLine(width == 1
-                ? $"\tconstexpr operator {regClassName}() const {{return m_value ? Mask : 0;}}"
-                : $"\tconstexpr operator {regClassName}() const {{return static_cast<{(width + offset).ToType()}>(static_cast<{(width + offset).ToType()}>(m_value) << Offset);}}");
+                ? $"\tconstexpr operator {regClassName}() const {{return value_ ? mask : 0;}}"
+                : $"\tconstexpr operator {regClassName}() const {{return static_cast<{(width + offset).ToType()}>(static_cast<{(width + offset).ToType()}>(value_) << offset);}}");
 
-            sb.AppendLine($"\tconstexpr operator ClearSet<{regClassName}>() const {{return ClearSet<{regClassName}>(Mask, *this);}}");
-            sb.AppendLine($"\tconstexpr auto operator|({regClassName} other) const -> {regClassName} {{ return static_cast<{regClassName}>(*this) | other.m_value;}}");
-            sb.AppendLine($"\tconstexpr auto operator||(ClearSet<{regClassName}> other) const -> ClearSet<{regClassName}> {{return ClearSet<{regClassName}>({regClassName}(Mask) | other.clear(), *this | other.set()); }}");
+            sb.AppendLine($"\tconstexpr operator opsy::utility::clear_set<{regClassName}>() const {{return opsy::utility::clear_set<{regClassName}>(mask, *this);}}");
+            sb.AppendLine($"\tconstexpr auto operator|({regClassName} other) const -> {regClassName} {{ return static_cast<{regClassName}>(*this) | other.value_;}}");
+            sb.AppendLine($"\tconstexpr auto operator||(opsy::utility::clear_set<{regClassName}> other) const -> opsy::utility::clear_set<{regClassName}> {{return opsy::utility::clear_set<{regClassName}>({regClassName}(mask) | other.clear(), *this | other.set()); }}");
         }
 
         sb.AppendLine();
         sb.AppendLine("private:");
-        sb.AppendLine($"\t {width.ToType()} m_value;");
+        sb.AppendLine($"\t {width.ToType()} value_;");
 
         sb.AppendLine("};");
         return sb.ToString();
@@ -153,26 +153,26 @@ public partial class registerType
             {
                 var (width, offset) = field.WidthOffset;
                 if(width == 1)
-                    sb.AppendLine($"\t[[nodiscard]] constexpr auto {field.FieldName()}() const -> {field.ClassName()} {{return {field.ClassName()}((m_value & {field.ClassName()}::Mask) != 0);}}");
+                    sb.AppendLine($"\t[[nodiscard]] constexpr auto {field.FieldName()}() const -> {field.ClassName()} {{return {field.ClassName()}((value_ & {field.ClassName()}::mask) != 0);}}");
                 else
-                    sb.AppendLine($"\t[[nodiscard]] constexpr auto {field.FieldName()}() const -> {field.ClassName()} {{return {field.ClassName()}(static_cast<{width.ToType()}>(m_value >> {field.ClassName()}::Offset));}}");
+                    sb.AppendLine($"\t[[nodiscard]] constexpr auto {field.FieldName()}() const -> {field.ClassName()} {{return {field.ClassName()}(static_cast<{width.ToType()}>(value_ >> {field.ClassName()}::offset));}}");
             }
         }
 
         sb.AppendLine();
-        sb.AppendLine($"\tconstexpr {overrideName}({BitSize.ToType()} value) : m_value(value) {{}}");
-        sb.AppendLine($"\tconstexpr auto operator |({overrideName} other) const -> {overrideName} {{ return m_value | other.m_value; }}");
-        sb.AppendLine($"\tconstexpr auto operator ~() const -> {overrideName} {{ return ~m_value; }}");
-        sb.AppendLine($"\t[[nodiscard]] constexpr auto value() const {{ return m_value; }}");
+        sb.AppendLine($"\tconstexpr {overrideName}({BitSize.ToType()} value) : value_(value) {{}}");
+        sb.AppendLine($"\tconstexpr auto operator |({overrideName} other) const -> {overrideName} {{ return value_ | other.value_; }}");
+        sb.AppendLine($"\tconstexpr auto operator ~() const -> {overrideName} {{ return ~value_; }}");
+        sb.AppendLine($"\t[[nodiscard]] constexpr auto value() const {{ return value_; }}");
 
         sb.AppendLine();
 
         if (!string.IsNullOrWhiteSpace(resetValue))
-            sb.AppendLine($"\tstatic constexpr {BitSize.ToType()} ResetValue = {resetValue.ToValue().ToBinary()}; // {resetValue.ToValue()} {resetValue.ToValue().ToHex()}");
+            sb.AppendLine($"\tstatic constexpr {BitSize.ToType()} reset_value = {resetValue.ToValue().ToBinary()}; // {resetValue.ToValue()} {resetValue.ToValue().ToHex()}");
 
         sb.AppendLine();
         sb.AppendLine("private:");
-        sb.AppendLine($"\t{BitSize.ToType()} m_value;");
+        sb.AppendLine($"\t{BitSize.ToType()} value_;");
 
         sb.AppendLine("};");
         return sb.ToString();
@@ -270,7 +270,7 @@ public partial class peripheralType
                     throw new Exception();
 
                 if (padding != 0)
-                    sb.AppendLine($"\tPadding<{padding}> _p{currentOffset};");
+                    sb.AppendLine($"\topsy::utility::padding<{padding}> _p{currentOffset};");
 
                 var size = 0;
 
@@ -279,20 +279,20 @@ public partial class peripheralType
                     switch (register.accessSpecified ? register.access : accessType.readwrite)
                     {
                         case accessType.@readonly:
-                            sb.AppendLine($"\tReadOnlyMemory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
+                            sb.AppendLine($"\topsy::utility::read_only_memory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
                             break;
                         case accessType.writeonly:
-                            sb.AppendLine($"\tWriteOnlyMemory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
+                            sb.AppendLine($"\topsy::utility::write_only_memory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
                             break;
                         default:
                         case accessType.readwrite:
-                            sb.AppendLine($"\tMemory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
+                            sb.AppendLine($"\topsy::utility::memory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
                             break;
                         case accessType.writeOnce:
-                            sb.AppendLine($"\tWriteOnlyMemory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
+                            sb.AppendLine($"\topsy::utility::write_only_memory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
                             break;
                         case accessType.readwriteOnce:
-                            sb.AppendLine($"\tMemory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
+                            sb.AppendLine($"\topsy::utility::memory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
                             break;
                     }
 

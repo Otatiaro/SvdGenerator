@@ -1,23 +1,25 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <AssemblyTitle>SvdGenerator</AssemblyTitle>
     <Product>SvdGenerator</Product>
-    <Copyright>Copyright ©  2023</Copyright>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Copyright>Copyright (c) 2019-2026 Thomas Legrand</Copyright>
+    <Authors>Thomas Legrand</Authors>
+    <Description>Generates typed C++ peripheral headers for ARM Cortex-M targets from a CMSIS-SVD file. Output is wired to opsy's utility/memory.hpp register building blocks.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Version>0.0.0-dev</Version>
+    <InformationalVersion>0.0.0-dev</InformationalVersion>
     <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
     <Compile Update="CMSIS-SVD_Schema_1_1.cs">
       <DependentUpon>CMSIS-SVD_Schema_1_1.xsd</DependentUpon>
-    </Compile>
-    <Compile Update="Memory.cs">
-      <AutoGen>True</AutoGen>
-      <DesignTime>True</DesignTime>
-      <DependentUpon>Memory.tt</DependentUpon>
     </Compile>
   </ItemGroup>
   <ItemGroup>
@@ -27,12 +29,6 @@
   </ItemGroup>
   <ItemGroup>
     <Service Include="{508349B6-6B84-4DF5-91F0-309BEEBAD82D}" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="Memory.tt">
-      <Generator>TextTemplatingFilePreprocessor</Generator>
-      <LastGenOutput>Memory.cs</LastGenOutput>
-    </Content>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
