@@ -5,11 +5,23 @@ Generates typed C++ peripheral headers for ARM Cortex-M targets from a
 description file.
 
 The output is wired to [opsy](https://github.com/Otatiaro/OpSy)'s
-`utility/memory.hpp` register building blocks (`opsy::utility::memory`,
-`read_only_memory`, `write_only_memory`, `clear_set`, `padding`). Drop
-the generated files into a project that already exposes `<utility/memory.hpp>`
-on its include path and you get strongly-typed, atomic-aware register access
-out of the box.
+[`utility/memory.hpp`](https://github.com/Otatiaro/OpSy/blob/9df189a2dc78ff306d8982fc025e164371c5d3fc/utility/memory.hpp)
+register building blocks (`opsy::utility::memory`, `read_only_memory`,
+`write_only_memory`, `clear_set`, `padding`). The link is pinned to the
+exact commit the generator targets, so it survives any future breaking
+change.
+
+You have two ways to provide that header:
+
+- **With opsy on your include path**, no extra step — the generated
+  files use `<utility/memory.hpp>`.
+- **Without opsy**, drop a copy of `memory.hpp` next to the generated
+  headers (lowercase, same directory). Each file probes
+  `__has_include("memory.hpp")` first and falls back to
+  `<utility/memory.hpp>` only if no local copy is found.
+
+Either way you get strongly-typed, atomic-aware register access out of
+the box.
 
 ## Build
 
@@ -32,8 +44,18 @@ Reads the SVD file, deletes any existing files in `<output_dir>`, and
 writes one `.hpp` per peripheral group plus an `interrupts.hpp`. The
 output namespace is the device name in upper case (e.g. `STM32H563`).
 
-Each generated header begins with `#include <utility/memory.hpp>` —
-make sure that header (from opsy) is reachable.
+Each generated header begins with:
+
+```cpp
+#if __has_include("memory.hpp")
+#include "memory.hpp"
+#else
+#include <utility/memory.hpp>
+#endif
+```
+
+so it picks up either the local copy you dropped in the same directory
+or the opsy-shipped version on the include path.
 
 ## Generated style
 

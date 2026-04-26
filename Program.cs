@@ -56,7 +56,7 @@ namespace SvdGenerator
             {
                 // there is only one "base class" in the group, make it the name of the group
                 var file = Path.Combine(output, group.Key.FileName());
-                File.WriteAllLines(file, new[] { "#pragma once", "", "#include <utility/memory.hpp>", "", $"namespace {device.ToNamespace()}", "{", "" });
+                File.WriteAllLines(file, new[] { "#pragma once", "", "#if __has_include(\"memory.hpp\")", "#include \"memory.hpp\"", "#else", "#include <utility/memory.hpp>", "#endif", "", $"namespace {device.ToNamespace()}", "{", "" });
                 File.AppendAllText(file, group.First().p.ClassDefinition(group.Key.PeripheralName()));
                 foreach (var periph in group.First().Item2)
                     File.AppendAllLines(file, new[] { $"inline {group.Key.PeripheralName()}& {periph.PeriphName()} = *reinterpret_cast<{group.Key.PeripheralName()}*>({periph.baseAddress.ToValue().ToHex()});" });
@@ -68,7 +68,7 @@ namespace SvdGenerator
             {
                 // there are multiple "base classes" in the same group (like TIM where some timers have slightly different configurations)
                 var file = Path.Combine(output, group.Key.FileName());
-                File.WriteAllLines(file, new[] { "#pragma once", "", "#include <utility/memory.hpp>", "", $"namespace {device.ToNamespace()}", "{", "" });
+                File.WriteAllLines(file, new[] { "#pragma once", "", "#if __has_include(\"memory.hpp\")", "#include \"memory.hpp\"", "#else", "#include <utility/memory.hpp>", "#endif", "", $"namespace {device.ToNamespace()}", "{", "" });
 
                 foreach (var tuple in group)
                     File.AppendAllText(file, tuple.p.ClassDefinition());
