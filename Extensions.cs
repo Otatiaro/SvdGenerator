@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -93,14 +93,14 @@ public partial class fieldType
                         width += int.Parse(value);
                         break;
                     case ItemsChoiceType.bitRange:
-                    {
-                        var split = value.Split(':');
-                        if (split.Length != 2)
-                            throw new Exception();
-                        offset = int.Parse(split[1]);
-                        width = int.Parse(split[0]) - offset;
-                        break;
-                    }
+                        {
+                            var split = value.Split(':');
+                            if (split.Length != 2)
+                                throw new Exception();
+                            offset = int.Parse(split[1]);
+                            width = int.Parse(split[0]) - offset;
+                            break;
+                        }
                     default:
                         throw new Exception();
                 }
@@ -130,7 +130,7 @@ public partial class registerType
 
         var sb = new StringBuilder();
 
-        if(!BitSize.ExactType())
+        if (!BitSize.ExactType())
             throw new Exception();
 
         sb.AppendLine($"/**");
@@ -152,7 +152,7 @@ public partial class registerType
             foreach (var field in fields)
             {
                 var (width, offset) = field.WidthOffset;
-                if(width == 1)
+                if (width == 1)
                     sb.AppendLine($"\t[[nodiscard]] constexpr auto {field.FieldName()}() const -> {field.ClassName()} {{return {field.ClassName()}((value_ & {field.ClassName()}::mask) != 0);}}");
                 else
                     sb.AppendLine($"\t[[nodiscard]] constexpr auto {field.FieldName()}() const -> {field.ClassName()} {{return {field.ClassName()}(static_cast<{width.ToType()}>(value_ >> {field.ClassName()}::offset));}}");
@@ -180,8 +180,8 @@ public partial class registerType
 
     public bool IsEquivalent(registerType other) => other.fields != null &&
                                                     fields != null &&
-                                                    other.fields.Length == fields.Length && 
-                                                    other.fields.Length != 0 && 
+                                                    other.fields.Length == fields.Length &&
+                                                    other.fields.Length != 0 &&
                                                     other.fields.All(f => fields.Any(f2 => f2.IsEquivalent(f))) &&
                                                     other.BitSize == BitSize &&
                                                     other.resetValue == resetValue;
@@ -216,7 +216,7 @@ public partial class peripheralType
             {
                 var equ = dict.Keys.FirstOrDefault(k => k.IsEquivalent(type));
                 if (equ != null) dict[equ].Add(type);
-                else dict.Add(type, new List<registerType>{type});
+                else dict.Add(type, new List<registerType> { type });
             }
 
             foreach (var values in dict.Values)
@@ -247,7 +247,7 @@ public partial class peripheralType
                 foreach (var value in values)
                     classNames.Add(value, name);
             }
-            
+
 
             sb.AppendLine();
 
@@ -266,7 +266,7 @@ public partial class peripheralType
 
                 var padding = group.Key - currentOffset;
 
-                if(padding < 0)
+                if (padding < 0)
                     throw new Exception();
 
                 if (padding != 0)

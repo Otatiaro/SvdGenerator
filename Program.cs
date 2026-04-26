@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -31,7 +31,7 @@ namespace SvdGenerator
             device? device;
 
             using (var stream = new FileStream(input, FileMode.Open))
-               device = serializer.Deserialize(stream) as device;
+                device = serializer.Deserialize(stream) as device;
 
             if (device == null)
             {
@@ -44,7 +44,7 @@ namespace SvdGenerator
                     File.Delete(file);
             else
                 Directory.CreateDirectory(output);
-            
+
 
             var grouping = device.peripherals
                 .Where(p => string.IsNullOrEmpty(p.derivedFrom))
@@ -56,10 +56,10 @@ namespace SvdGenerator
             {
                 // there is only one "base class" in the group, make it the name of the group
                 var file = Path.Combine(output, group.Key.FileName());
-                File.WriteAllLines(file, new []{"#pragma once", "", "#include <utility/memory.hpp>", "", $"namespace {device.ToNamespace()}", "{", ""});
+                File.WriteAllLines(file, new[] { "#pragma once", "", "#include <utility/memory.hpp>", "", $"namespace {device.ToNamespace()}", "{", "" });
                 File.AppendAllText(file, group.First().p.ClassDefinition(group.Key.PeripheralName()));
                 foreach (var periph in group.First().Item2)
-                    File.AppendAllLines(file, new []{$"inline {group.Key.PeripheralName()}& {periph.PeriphName()} = *reinterpret_cast<{group.Key.PeripheralName()}*>({periph.baseAddress.ToValue().ToHex()});"});
+                    File.AppendAllLines(file, new[] { $"inline {group.Key.PeripheralName()}& {periph.PeriphName()} = *reinterpret_cast<{group.Key.PeripheralName()}*>({periph.baseAddress.ToValue().ToHex()});" });
                 File.AppendAllLines(file, new[] { "", $"}} // {device.ToNamespace()}", "" });
 
             }
@@ -94,7 +94,7 @@ namespace SvdGenerator
 
 
             var interrupts = device.peripherals
-                .Where(p => p.interrupt!= null) 
+                .Where(p => p.interrupt != null)
                 .SelectMany(p => p.interrupt)
                 .OrderBy(i => i.value.ToValue())
                 .ToArray();
