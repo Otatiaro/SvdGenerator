@@ -94,7 +94,10 @@ public partial class fieldType
                         break;
                     case ItemsChoiceType.bitRange:
                         {
-                            var split = value.Split(':');
+                            // CMSIS-SVD writes <bitRange>[msb:lsb]</bitRange>
+                            // with surrounding square brackets; strip them
+                            // before splitting (RP2040 uses this form).
+                            var split = value.Trim('[', ']').Split(':');
                             if (split.Length != 2)
                                 throw new Exception();
                             offset = int.Parse(split[1]);
@@ -190,7 +193,11 @@ public partial class registerType
     public long Offset => addressOffset.ToValue();
 
     [XmlIgnore]
-    public int BitSize => (int)size.ToValue();
+    // CMSIS-SVD spec lets a register inherit <size> from its peripheral or
+    // device — the deserializer here does not propagate that, so when the
+    // tag is absent we fall back to 32, which matches every ARM Cortex-M
+    // peripheral we have seen in practice.
+    public int BitSize => string.IsNullOrEmpty(size) ? 32 : (int)size.ToValue();
 }
 
 public partial class peripheralType

@@ -72,10 +72,13 @@ namespace SvdGenerator
             }
 
 
+            // groupName is optional in CMSIS-SVD. Some vendors (NXP Kinetis,
+            // RaspberryPi) leave it empty; fall back to the peripheral's own
+            // name so each ungrouped peripheral lives in its own .hpp.
             var grouping = device.peripherals
                 .Where(p => string.IsNullOrEmpty(p.derivedFrom))
                 .Select(p => (p, device.peripherals.Where(p2 => p2.derivedFrom == p.name).Append(p).OrderBy(p2 => p2.name)))
-                .GroupBy(p => p.p.groupName).ToArray();
+                .GroupBy(p => string.IsNullOrEmpty(p.p.groupName) ? p.p.name : p.p.groupName).ToArray();
 
 
             foreach (var group in grouping.Where(g => g.Count() == 1))
