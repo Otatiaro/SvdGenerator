@@ -42,8 +42,15 @@ namespace SvdGenerator
             var serializer = new XmlSerializer(typeof(device));
             device? device;
 
-            using (var stream = new FileStream(input, FileMode.Open))
-                device = serializer.Deserialize(stream) as device;
+            // Vendor SVDs occasionally drift from the CMSIS-SVD spec on
+            // <access> casing. Nordic ships <access>read-writeonce</access>
+            // (lowercase 'o') across the whole nrf52/53/54 family, which the
+            // strict XmlSerializer-generated reader rejects. Patch known
+            // misspellings in-place; leave everything else untouched so a
+            // truly broken file still fails loud.
+            var content = SanitizeSvd(File.ReadAllText(input));
+            using (var reader = new StringReader(content))
+                device = serializer.Deserialize(reader) as device;
 
             if (device == null)
             {
@@ -169,6 +176,11 @@ namespace SvdGenerator
             typeof(Program).Assembly
                 .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
                 ?.InformationalVersion ?? "unknown";
+
+        // Patch known vendor deviations from the CMSIS-SVD spec before the
+        // strict XmlSerializer-generated reader sees them.
+        static string SanitizeSvd(string content) => content
+            .Replace("<access>read-writeonce</access>", "<access>read-writeOnce</access>");
 
         static void PrintUsage(TextWriter w)
         {
