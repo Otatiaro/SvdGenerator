@@ -59,14 +59,17 @@ or the opsy-shipped version on the include path.
 
 ## Generated style
 
-- Class names: `snake_case` with a suffix —
+- All identifiers are `snake_case`. Same convention as opsy core.
+- Class names carry a suffix to disambiguate the kind:
   `*_p` for peripherals, `*_r` for registers, `*_f` for fields.
-- Members: trailing underscore (`value_`).
-- Statics: `Mask`, `Offset`, `Width`, `ResetValue` stay in PascalCase
-  because that is what `opsy::utility`'s atomic helpers expect
-  (`T::Mask`).
-- All register storage types are referenced fully-qualified
+- Members use a trailing underscore (`value_`).
+- Field constants on the field class: `mask`, `offset`, `width`,
+  `range`, and `reset_value` on the register class.
+- All register storage types are referenced fully qualified
   (`opsy::utility::memory<…>`, etc.).
+- Field accessors that would shadow a C++ keyword (`int`, `signed`,
+  …) or the register's own `value()` method are prefixed with an
+  underscore (`_int`, `_value`).
 
 ## Example
 
@@ -78,6 +81,59 @@ using namespace STM32H563;
 rcc.rcc_ahb1enr |= rcc_p::rcc_ahb1enr_r::gpdma1en_f() | opsy::utility::atomic;
 ```
 
+## Tested targets
+
+The CI smoke matrix builds the generator, runs it against a pinned
+SVD from each vendor below, drops the opsy `memory.hpp` next to the
+output, and syntax-checks every generated peripheral header with
+`g++ -std=c++20 -Wall -Wextra -Wshadow -Wcast-align -Wconversion -Wsign-conversion -Wdouble-promotion -Werror`
+(the strictest set opsy's own BSPs compile with).
+
+| Vendor | Core | SVD pulled from |
+|---|---|---|
+| STMicro / STM32F401 | Cortex-M4 | [`cmsis-svd-data/data/STMicro/STM32F401.svd`](https://github.com/cmsis-svd/cmsis-svd-data/blob/main/data/STMicro/STM32F401.svd) |
+| Raspberry Pi / RP2040 | Cortex-M0+ | [`cmsis-svd-data/data/RaspberryPi/rp2040.svd`](https://github.com/cmsis-svd/cmsis-svd-data/blob/main/data/RaspberryPi/rp2040.svd) |
+| Microchip (Atmel) / ATSAMD21G18A | Cortex-M0+ | [`cmsis-svd-data/data/Atmel/ATSAMD21G18A.svd`](https://github.com/cmsis-svd/cmsis-svd-data/blob/main/data/Atmel/ATSAMD21G18A.svd) |
+| NXP Kinetis / MK64F12 | Cortex-M4 | [`cmsis-svd-data/data/NXP/MK64F12.svd`](https://github.com/cmsis-svd/cmsis-svd-data/blob/main/data/NXP/MK64F12.svd) |
+| Nordic / nRF52840 | Cortex-M4 | [`cmsis-svd-data/data/Nordic/nrf52840.svd`](https://github.com/cmsis-svd/cmsis-svd-data/blob/main/data/Nordic/nrf52840.svd) |
+
+The exact upstream commit the smoke compiles against is pinned in
+`.github/workflows/ci.yml` (env vars `OPSY_REF` and `SVD_DATA_REF`),
+so a one-line bump is all it takes to refresh.
+
+### CMSIS-SVD constructs the generator handles
+
+- Register arrays via `<dim>` / `<dimIncrement>` / `<dimIndex>`, with
+  both `name%s` (Atmel, Microchip) and `name[%s]` (Nordic) name
+  forms. The `[ ]` brackets are stripped from the resulting C++
+  identifier.
+- `<register derivedFrom="ParentName">` with attribute inheritance
+  for `size`, `fields`, `access`, `resetValue`, and `resetMask`.
+- `<bitRange>[msb:lsb]` field bit-range notation alongside the more
+  common `<bitOffset>` / `<bitWidth>` and `<lsb>` / `<msb>` pairs.
+- Optional `<size>` / `<groupName>`: defaults to 32 bits for the
+  former and to the peripheral's own name for the latter.
+- Byte / half / word access aliases that overlap a wider register
+  (NXP Kinetis CRC/SPI, Atmel SAM PORT). They are laid out as an
+  anonymous `union` of named lane structs (`_lane_N`); `static_assert(offsetof(...))`
+  checks every register against the SVD-stated offset.
+- Nordic's non-spec `<access>read-writeonce</access>` typo (lowercase
+  `o`) is patched in-place before deserialization.
+
+### Known limitations
+
+- Register-level `<cluster>` is not handled — the generator only
+  walks direct `<register>` children of a peripheral.
+- Anonymous structs are emitted as named `_lane_N` fields rather
+  than truly anonymous (GCC's anonymous-struct extension forbids
+  non-POD members, and `opsy::utility::memory` embeds a
+  `std::atomic`). Byte/half aliases are reached via
+  `peripheral._lane_N.fooN` rather than `peripheral.fooN`.
+- The `<dimIndex>` form `A,B,C` (named indices) collapses to
+  `A`/`B`/`C`; the range form `0-3` is expanded; everything else
+  falls back to numeric indices.
+- Peripheral-level `<dim>` is not expanded.
+
 ## Releases
 
 Tag a commit with a SemVer tag and push it; the release workflow
@@ -85,8 +141,8 @@ publishes self-contained `win-x64`, `linux-x64`, and `osx-arm64`
 binaries to a GitHub Release.
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 Untagged local builds carry the version `0.0.0-dev`.
