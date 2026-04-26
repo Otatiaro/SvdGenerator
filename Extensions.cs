@@ -208,6 +208,11 @@ public partial class registerType
     // with `%s` in the name) into one registerType per index. SVDs from
     // Atmel/Microchip and Nordic use this heavily; STM32 SVDs do not, so
     // the path was untested before the multi-vendor smoke matrix.
+    //
+    // CMSIS-SVD spec accepts both `name%s` (Atmel/Microchip) and the
+    // `name[%s]` array-notation form (Nordic). The brackets are not
+    // part of the C++ identifier; strip them so the cloned names are
+    // valid identifiers in either case.
     public IEnumerable<registerType> Expand()
     {
         if (string.IsNullOrEmpty(dim) || !name.Contains("%s"))
@@ -216,6 +221,7 @@ public partial class registerType
             yield break;
         }
 
+        var template = name.Replace("[%s]", "%s");
         var count = (int)dim.ToValue();
         var increment = string.IsNullOrEmpty(dimIncrement) ? 4L : dimIncrement.ToValue();
         var baseOffset = addressOffset.ToValue();
@@ -224,7 +230,7 @@ public partial class registerType
         for (var i = 0; i < count; i++)
         {
             var clone = (registerType)MemberwiseClone();
-            clone.name = name.Replace("%s", indices[i]);
+            clone.name = template.Replace("%s", indices[i]);
             clone.addressOffset = (baseOffset + i * increment).ToHex();
             clone.dim = null;
             clone.dimIncrement = null;
