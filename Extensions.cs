@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Xml.Serialization;
@@ -7,7 +8,9 @@ using static StringExtensions;
 
 public partial class fieldType
 {
-    public override string ToString()
+    public override string ToString() => name;
+
+    public string ClassDefinition(string? regClassName)
     {
         var sb = new StringBuilder();
 
@@ -39,15 +42,15 @@ public partial class fieldType
         sb.AppendLine($"\tconstexpr {this.ClassName()}({width.ToType()} value{defaultValue}) : m_value(value{rangeCheck}) {{}}");
         sb.AppendLine($"\tconstexpr operator {width.ToType()}() const {{return m_value;}}");
 
-        if (reg != null)
+        if (regClassName != null)
         {
             sb.AppendLine(width == 1
-                ? $"\tconstexpr operator {reg.ClassName()}() const {{return m_value ? Mask : 0;}}"
-                : $"\tconstexpr operator {reg.ClassName()}() const {{return static_cast<{(width + offset).ToType()}>(static_cast<{(width + offset).ToType()}>(m_value) << Offset);}}");
+                ? $"\tconstexpr operator {regClassName}() const {{return m_value ? Mask : 0;}}"
+                : $"\tconstexpr operator {regClassName}() const {{return static_cast<{(width + offset).ToType()}>(static_cast<{(width + offset).ToType()}>(m_value) << Offset);}}");
 
-            sb.AppendLine($"\tconstexpr operator ClearSet<{reg.ClassName()}>() const {{return ClearSet<{reg.ClassName()}>(Mask, *this);}}");
-            sb.AppendLine($"\tconstexpr auto operator|({reg.ClassName()} other) const -> {reg.ClassName()} {{ return static_cast<{reg.ClassName()}>(*this) | other.m_value;}}");
-            sb.AppendLine($"\tconstexpr auto operator||(ClearSet<{reg.ClassName()}> other) const -> ClearSet<{reg.ClassName()}> {{return ClearSet<{reg.ClassName()}>({reg.ClassName()}(Mask) | other.clear(), *this | other.set()); }}");
+            sb.AppendLine($"\tconstexpr operator ClearSet<{regClassName}>() const {{return ClearSet<{regClassName}>(Mask, *this);}}");
+            sb.AppendLine($"\tconstexpr auto operator|({regClassName} other) const -> {regClassName} {{ return static_cast<{regClassName}>(*this) | other.m_value;}}");
+            sb.AppendLine($"\tconstexpr auto operator||(ClearSet<{regClassName}> other) const -> ClearSet<{regClassName}> {{return ClearSet<{regClassName}>({regClassName}(Mask) | other.clear(), *this | other.set()); }}");
         }
 
         sb.AppendLine();
@@ -107,33 +110,41 @@ public partial class fieldType
         }
     }
 
-    [XmlIgnore]
-    public registerType reg { get; set; } = null;
+    public bool IsEquivalent(fieldType other) =>
+        other.name == name &&
+        other.WidthOffset == WidthOffset &&
+        other.accessSpecified == accessSpecified &&
+        (!other.accessSpecified || (other.access == access));
+
 
 }
 
 public partial class registerType
 {
-    public override string ToString()
+    public override string ToString() => name;
+
+    public string ClassDefinition(string? overrideName = null, string? overrideDescription = null)
     {
+        overrideName ??= this.ClassName();
+        overrideDescription ??= description;
+
         var sb = new StringBuilder();
 
         if(!BitSize.ExactType())
             throw new Exception();
 
         sb.AppendLine($"/**");
-        sb.AppendLine($" * {description.ToOneLine()}");
+        sb.AppendLine($" * {overrideDescription.ToOneLine()}");
         sb.AppendLine($" */");
-        sb.AppendLine($"class {this.ClassName()} {{");
+        sb.AppendLine($"class {overrideName} {{");
         sb.AppendLine($"public:");
 
         if (fields != null)
         {
             foreach (var field in fields)
             {
-                field.reg = this;
                 sb.AppendLine();
-                sb.Append(field);
+                sb.Append(field.ClassDefinition(overrideName));
             }
 
             sb.AppendLine();
@@ -149,13 +160,12 @@ public partial class registerType
         }
 
         sb.AppendLine();
-        sb.AppendLine($"\tconstexpr {this.ClassName()}({BitSize.ToType()} value) : m_value(value) {{}}");
-        sb.AppendLine($"\tconstexpr auto operator |({this.ClassName()} other) const -> {this.ClassName()} {{ return m_value | other.m_value; }}");
-        sb.AppendLine($"\tconstexpr auto operator ~() const -> {this.ClassName()} {{ return ~m_value; }}");
+        sb.AppendLine($"\tconstexpr {overrideName}({BitSize.ToType()} value) : m_value(value) {{}}");
+        sb.AppendLine($"\tconstexpr auto operator |({overrideName} other) const -> {overrideName} {{ return m_value | other.m_value; }}");
+        sb.AppendLine($"\tconstexpr auto operator ~() const -> {overrideName} {{ return ~m_value; }}");
         sb.AppendLine($"\t[[nodiscard]] constexpr auto value() const {{ return m_value; }}");
 
         sb.AppendLine();
-        sb.AppendLine($"\tstatic constexpr std::size_t Offset = {addressOffset.ToValue()};");
 
         if (!string.IsNullOrWhiteSpace(resetValue))
             sb.AppendLine($"\tstatic constexpr {BitSize.ToType()} ResetValue = {resetValue.ToValue().ToBinary()}; // {resetValue.ToValue()} {resetValue.ToValue().ToHex()}");
@@ -168,18 +178,30 @@ public partial class registerType
         return sb.ToString();
     }
 
+    public bool IsEquivalent(registerType other) => other.fields != null &&
+                                                    fields != null &&
+                                                    other.fields.Length == fields.Length && 
+                                                    other.fields.Length != 0 && 
+                                                    other.fields.All(f => fields.Any(f2 => f2.IsEquivalent(f))) &&
+                                                    other.BitSize == BitSize &&
+                                                    other.resetValue == resetValue;
+
+    [XmlIgnore]
+    public long Offset => addressOffset.ToValue();
+
     [XmlIgnore]
     public int BitSize => (int)size.ToValue();
 }
 
 public partial class peripheralType
 {
-    public string ClassDefinition(string className = null)
+    public string ClassDefinition(string? className = null)
     {
         if (className == null)
             className = this.ClassName();
 
         var sb = new StringBuilder();
+        var classNames = new Dictionary<registerType, string>();
 
         sb.AppendLine($"/**");
         sb.AppendLine($" * {description.ToOneLine()}");
@@ -189,8 +211,43 @@ public partial class peripheralType
 
         if (registers != null)
         {
-            foreach (var register in registers)
-                sb.Append(register);
+            var dict = new Dictionary<registerType, List<registerType>>();
+            foreach (var type in registers.OfType<registerType>())
+            {
+                var equ = dict.Keys.FirstOrDefault(k => k.IsEquivalent(type));
+                if (equ != null) dict[equ].Add(type);
+                else dict.Add(type, new List<registerType>{type});
+            }
+
+            foreach (var values in dict.Values)
+            {
+                var name = values.Select(r => r.ClassName()).CommonWithReplace("x");
+
+                if (name is null)
+                    name = values.First().ClassName();
+                else
+                {
+                    var i = 2;
+                    while (classNames.ContainsValue(name))
+                    {
+                        var replacement = string.Empty;
+                        for (var j = 0; j < i; j++)
+                            replacement += "x";
+
+                        name = values.Select(r => r.ClassName()).CommonWithReplace(replacement)!;
+                    }
+                }
+
+                var description = values.Select(r => r.description).CommonWithReplace("X") ?? values.First().description;
+
+
+                sb.AppendLine();
+                sb.Append(values.First().ClassDefinition(name, description));
+
+                foreach (var value in values)
+                    classNames.Add(value, name);
+            }
+            
 
             sb.AppendLine();
 
@@ -200,6 +257,7 @@ public partial class peripheralType
                 .OfType<registerType>()
                 .GroupBy(r => r.addressOffset.ToValue())
                 .OrderBy(r => r.Key);
+
 
             foreach (var group in request)
             {
@@ -221,20 +279,20 @@ public partial class peripheralType
                     switch (register.accessSpecified ? register.access : accessType.readwrite)
                     {
                         case accessType.@readonly:
-                            sb.AppendLine($"\tReadOnlyMemory<{register.BitSize.ToType()},{register.ClassName()}> {register.FieldName()};");
+                            sb.AppendLine($"\tReadOnlyMemory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
                             break;
                         case accessType.writeonly:
-                            sb.AppendLine($"\tWriteOnlyMemory<{register.BitSize.ToType()},{register.ClassName()}> {register.FieldName()};");
+                            sb.AppendLine($"\tWriteOnlyMemory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
                             break;
                         default:
                         case accessType.readwrite:
-                            sb.AppendLine($"\tMemory<{register.BitSize.ToType()},{register.ClassName()}> {register.FieldName()};");
+                            sb.AppendLine($"\tMemory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
                             break;
                         case accessType.writeOnce:
-                            sb.AppendLine($"\tWriteOnlyMemory<{register.BitSize.ToType()},{register.ClassName()}> {register.FieldName()};");
+                            sb.AppendLine($"\tWriteOnlyMemory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
                             break;
                         case accessType.readwriteOnce:
-                            sb.AppendLine($"\tMemory<{register.BitSize.ToType()},{register.ClassName()}> {register.FieldName()};");
+                            sb.AppendLine($"\tMemory<{register.BitSize.ToType()},{classNames[register]}> {register.FieldName()};");
                             break;
                     }
 
@@ -260,7 +318,7 @@ public partial class peripheralType
             foreach (var register in registers.OfType<registerType>())
             {
                 var offset = register.addressOffset.ToValue();
-                sb.AppendLine($"static_assert(offsetof({className}, {register.FieldName()}) == {className}::{register.ClassName()}::Offset);");
+                sb.AppendLine($"static_assert(offsetof({className}, {register.FieldName()}) == {register.Offset});");
             }
         }
 

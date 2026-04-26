@@ -9,11 +9,11 @@ namespace SvdGenerator
 {
     public partial class Memory
     {
-        public Memory(device device)
+        public Memory(device? device)
         {
             Device = device;
         }
-        public device Device { get; }
+        public device? Device { get; }
     }
 
 
@@ -38,7 +38,7 @@ namespace SvdGenerator
             }
 
             var serializer = new XmlSerializer(typeof(device));
-            device device;
+            device? device;
 
             using (var stream = new FileStream(input, FileMode.Open))
                device = serializer.Deserialize(stream) as device;
@@ -60,7 +60,7 @@ namespace SvdGenerator
 
             var grouping = device.peripherals
                 .Where(p => string.IsNullOrEmpty(p.derivedFrom))
-                .Select(p => (p, device.peripherals.Where(p2 => p2.derivedFrom == p.name).Concat(new []{p}).OrderBy(p2 => p2.name)))
+                .Select(p => (p, device.peripherals.Where(p2 => p2.derivedFrom == p.name).Append(p).OrderBy(p2 => p2.name)))
                 .GroupBy(p => p.p.groupName).ToArray();
 
 
