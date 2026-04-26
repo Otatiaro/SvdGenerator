@@ -198,6 +198,52 @@ public partial class registerType
     // tag is absent we fall back to 32, which matches every ARM Cortex-M
     // peripheral we have seen in practice.
     public int BitSize => string.IsNullOrEmpty(size) ? 32 : (int)size.ToValue();
+
+    // Expand a CMSIS-SVD register array (<dim>/<dimIncrement>/<dimIndex>
+    // with `%s` in the name) into one registerType per index. SVDs from
+    // Atmel/Microchip and Nordic use this heavily; STM32 SVDs do not, so
+    // the path was untested before the multi-vendor smoke matrix.
+    public IEnumerable<registerType> Expand()
+    {
+        if (string.IsNullOrEmpty(dim) || !name.Contains("%s"))
+        {
+            yield return this;
+            yield break;
+        }
+
+        var count = (int)dim.ToValue();
+        var increment = string.IsNullOrEmpty(dimIncrement) ? 4L : dimIncrement.ToValue();
+        var baseOffset = addressOffset.ToValue();
+        var indices = ResolveDimIndices(dimIndex, count);
+
+        for (var i = 0; i < count; i++)
+        {
+            var clone = (registerType)MemberwiseClone();
+            clone.name = name.Replace("%s", indices[i]);
+            clone.addressOffset = (baseOffset + i * increment).ToHex();
+            clone.dim = null;
+            clone.dimIncrement = null;
+            clone.dimIndex = null;
+            yield return clone;
+        }
+    }
+
+    static string[] ResolveDimIndices(string? raw, int count)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return Enumerable.Range(0, count).Select(i => i.ToString()).ToArray();
+
+        if (raw.Contains(','))
+            return raw.Split(',').Select(s => s.Trim()).ToArray();
+
+        // Range form like "0-3" or "A-D". Numeric only is what we have seen
+        // in practice; if both ends parse as int, expand the range.
+        var dash = raw.IndexOf('-');
+        if (dash > 0 && int.TryParse(raw[..dash], out var lo) && int.TryParse(raw[(dash + 1)..], out var hi))
+            return Enumerable.Range(lo, hi - lo + 1).Select(i => i.ToString()).ToArray();
+
+        return Enumerable.Range(0, count).Select(i => $"{raw}{i}").ToArray();
+    }
 }
 
 public partial class peripheralType
@@ -216,10 +262,52 @@ public partial class peripheralType
         sb.AppendLine($"class {className} {{");
         sb.AppendLine($"public:");
 
-        if (registers != null)
+        // Pre-expand <dim>-arrayed registers (CMSIS-SVD `name%s` form)
+        // once and reuse the same list everywhere this method enumerates
+        // registers, so equivalence detection, layout walking and the
+        // offsetof static_asserts all see the expanded names.
+        // Then drop any register whose span lies strictly inside a wider
+        // sibling at an earlier offset — Atmel/Microchip and NXP Kinetis
+        // SVDs declare byte/half access aliases of a 32-bit register at
+        // offsets 1/2/3 within the primary register's footprint, which
+        // we cannot represent without nested unions yet. Multiple registers
+        // at the same offset are kept (those become a normal union).
+        var expanded = registers?
+            .OfType<registerType>()
+            .SelectMany(r => r.Expand())
+            .OrderBy(r => r.addressOffset.ToValue())
+            .ThenByDescending(r => r.BitSize)
+            .ToList();
+
+        if (expanded != null)
+        {
+            var kept = new List<registerType>(expanded.Count);
+            long primaryOffset = -1;
+            long primaryEnd = 0;
+            foreach (var r in expanded)
+            {
+                var off = r.addressOffset.ToValue();
+                var sizeBytes = r.BitSize / 8;
+                if (off == primaryOffset)
+                {
+                    kept.Add(r);
+                    primaryEnd = Math.Max(primaryEnd, off + sizeBytes);
+                }
+                else if (off >= primaryEnd)
+                {
+                    kept.Add(r);
+                    primaryOffset = off;
+                    primaryEnd = off + sizeBytes;
+                }
+                // else: alias inside the primary register's span, drop
+            }
+            expanded = kept;
+        }
+
+        if (expanded != null)
         {
             var dict = new Dictionary<registerType, List<registerType>>();
-            foreach (var type in registers.OfType<registerType>())
+            foreach (var type in expanded)
             {
                 var equ = dict.Keys.FirstOrDefault(k => k.IsEquivalent(type));
                 if (equ != null) dict[equ].Add(type);
@@ -260,8 +348,7 @@ public partial class peripheralType
 
             long currentOffset = 0;
 
-            var request = registers
-                .OfType<registerType>()
+            var request = expanded
                 .GroupBy(r => r.addressOffset.ToValue())
                 .OrderBy(r => r.Key);
 
@@ -318,11 +405,11 @@ public partial class peripheralType
         sb.AppendLine("};");
 
 
-        if (registers != null)
+        if (expanded != null)
         {
             sb.AppendLine();
             sb.AppendLine($"static_assert(std::is_standard_layout_v<{className}>);");
-            foreach (var register in registers.OfType<registerType>())
+            foreach (var register in expanded)
             {
                 var offset = register.addressOffset.ToValue();
                 sb.AppendLine($"static_assert(offsetof({className}, {register.FieldName()}) == {register.Offset});");
