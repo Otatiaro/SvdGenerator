@@ -39,6 +39,8 @@ jobs:
             file: ATSAMD21G18A.svd
           - vendor: NXP
             file: MK64F12.svd
+          - vendor: Nordic
+            file: nrf52840.svd
     # Bump these to refresh the upstream sources the smoke compiles against.
     env:
       OPSY_REF: 9df189a2dc78ff306d8982fc025e164371c5d3fc
