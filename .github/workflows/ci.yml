@@ -25,14 +25,24 @@ jobs:
         run: dotnet format SvdGenerator.csproj --verify-no-changes --no-restore
 
   smoke:
-    name: smoke (generate + g++ syntax-check)
+    name: smoke (${{ matrix.vendor }}/${{ matrix.file }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - vendor: STMicro
+            file: STM32F401.svd
+          - vendor: RaspberryPi
+            file: rp2040.svd
+          - vendor: Atmel
+            file: ATSAMD21G18A.svd
     # Bump these to refresh the upstream sources the smoke compiles against.
     env:
       OPSY_REF: 9df189a2dc78ff306d8982fc025e164371c5d3fc
       SVD_DATA_REF: c65f8551e57c770344d229dcaa0bf838fa29aff4
-      SVD_VENDOR: STMicro
-      SVD_FILE: STM32F401.svd
+      SVD_VENDOR: ${{ matrix.vendor }}
+      SVD_FILE: ${{ matrix.file }}
     steps:
       - uses: actions/checkout@v4
 
