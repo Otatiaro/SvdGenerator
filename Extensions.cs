@@ -253,6 +253,44 @@ public partial class registerType
 
 public partial class peripheralType
 {
+    // Resolve register-level <register derivedFrom="..."> inheritance
+    // before generation. CMSIS-SVD lets a register declare itself as
+    // derived from another in the same peripheral and inherit unset
+    // attributes (size, fields, access, resetValue, ...) from that
+    // parent. The auto-generated XmlSerializer reader stores
+    // derivedFrom as a plain string; we apply the inheritance here so
+    // the rest of the generator can treat every register uniformly.
+    public void ResolveDerivedFrom()
+    {
+        if (registers == null) return;
+        var byName = registers.OfType<registerType>()
+            .Where(r => !string.IsNullOrEmpty(r.name))
+            .GroupBy(r => r.name)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        bool changed;
+        do
+        {
+            changed = false;
+            foreach (var r in registers.OfType<registerType>())
+            {
+                if (string.IsNullOrEmpty(r.derivedFrom)) continue;
+                if (!byName.TryGetValue(r.derivedFrom, out var parent)) continue;
+
+                if (string.IsNullOrEmpty(r.size) && !string.IsNullOrEmpty(parent.size))
+                { r.size = parent.size; changed = true; }
+                if ((r.fields == null || r.fields.Length == 0) && parent.fields != null && parent.fields.Length > 0)
+                { r.fields = parent.fields; changed = true; }
+                if (!r.accessSpecified && parent.accessSpecified)
+                { r.access = parent.access; r.accessSpecified = true; changed = true; }
+                if (string.IsNullOrEmpty(r.resetValue) && !string.IsNullOrEmpty(parent.resetValue))
+                { r.resetValue = parent.resetValue; changed = true; }
+                if (string.IsNullOrEmpty(r.resetMask) && !string.IsNullOrEmpty(parent.resetMask))
+                { r.resetMask = parent.resetMask; changed = true; }
+            }
+        } while (changed);
+    }
+
     public string ClassDefinition(string? className = null)
     {
         if (className == null)

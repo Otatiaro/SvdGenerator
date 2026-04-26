@@ -58,6 +58,14 @@ namespace SvdGenerator
                 return 1;
             }
 
+            // Apply CMSIS-SVD register-level derivedFrom inheritance before
+            // generation. Some vendor SVDs (Atmel SAMD21 PMUX1_%s derived
+            // from PMUX0_%s) leave size, fields, access, etc. implicit on
+            // the derived register and our fallbacks would compute the
+            // wrong layout otherwise.
+            foreach (var p in device.peripherals)
+                p.ResolveDerivedFrom();
+
             if (Directory.Exists(output))
             {
                 // Avoid clobbering anything we did not generate ourselves —
