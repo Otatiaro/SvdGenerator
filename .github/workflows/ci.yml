@@ -65,13 +65,20 @@ jobs:
             -o "out/memory.hpp"
 
       - name: g++ syntax-check every generated header
+        # Compile a 1-line TU that #includes the header rather than passing
+        # the .hpp as the main file. That mirrors real downstream usage and
+        # avoids the spurious "#pragma once in main file" diagnostic.
         run: |
-          set -euo pipefail
+          set -uo pipefail
           fail=0
           for f in out/*.hpp; do
-            [ "$(basename "$f")" = "memory.hpp" ] && continue
-            echo "::group::$f"
-            g++ -std=c++20 -Wall -Wextra -fsyntax-only -Iout -x c++-header "$f" || fail=1
+            name=$(basename "$f")
+            if [ "$name" = "memory.hpp" ]; then continue; fi
+            echo "::group::$name"
+            if ! printf '#include "%s"\n' "$name" \
+                | g++ -std=c++20 -Wall -Wextra -fsyntax-only -Iout -x c++ -; then
+              fail=1
+            fi
             echo "::endgroup::"
           done
           exit "$fail"
