@@ -86,8 +86,12 @@ public partial class fieldType
                         width = int.Parse(value);
                         break;
                     case ItemsChoiceType.lsb:
+                        // CMSIS-SVD <lsb>/<msb> are inclusive bit positions,
+                        // so the width is msb - lsb + 1. The +1 used to be
+                        // missing, which made 1-bit fields like [5:5] come
+                        // out as width=0 -> "0b" literal -> garbage.
                         offset = int.Parse(value);
-                        width -= offset;
+                        width = width - offset + 1;
                         break;
                     case ItemsChoiceType.msb:
                         width += int.Parse(value);
@@ -97,11 +101,12 @@ public partial class fieldType
                             // CMSIS-SVD writes <bitRange>[msb:lsb]</bitRange>
                             // with surrounding square brackets; strip them
                             // before splitting (RP2040 uses this form).
+                            // msb and lsb are inclusive: width = msb-lsb+1.
                             var split = value.Trim('[', ']').Split(':');
                             if (split.Length != 2)
                                 throw new Exception();
                             offset = int.Parse(split[1]);
-                            width = int.Parse(split[0]) - offset;
+                            width = int.Parse(split[0]) - offset + 1;
                             break;
                         }
                     default:
