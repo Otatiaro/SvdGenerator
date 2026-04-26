@@ -382,7 +382,6 @@ public partial class peripheralType
             // POD. Trade-off: byte/half aliases get accessed as
             // `peripheral._lane_N.fooN` instead of `peripheral.fooN`.
             long currentOffset = 0;
-            var paddingId = 0;
             var laneId = 0;
 
             foreach (var group in BuildFootprintGroups(expanded))
@@ -392,14 +391,14 @@ public partial class peripheralType
 
                 var leadingPadding = groupStart - currentOffset;
                 if (leadingPadding > 0)
-                    sb.AppendLine($"\topsy::utility::padding<{leadingPadding}> _p{paddingId++};");
+                    sb.AppendLine($"\topsy::utility::padding<{leadingPadding}> _p{currentOffset};");
 
                 var lanes = PartitionLanes(group);
 
                 if (lanes.Count == 1)
                 {
                     foreach (var r in lanes[0]) accessPath[r] = r.FieldName();
-                    EmitLaneMembers(sb, lanes[0], groupStart, classNames, ref paddingId, "\t");
+                    EmitLaneMembers(sb, lanes[0], groupStart, classNames, "\t");
                 }
                 else
                 {
@@ -410,14 +409,14 @@ public partial class peripheralType
                         if (bare)
                         {
                             accessPath[lane[0]] = lane[0].FieldName();
-                            EmitLaneMembers(sb, lane, groupStart, classNames, ref paddingId, "\t\t");
+                            EmitLaneMembers(sb, lane, groupStart, classNames, "\t\t");
                         }
                         else
                         {
                             var laneName = $"_lane_{laneId++}";
                             foreach (var r in lane) accessPath[r] = $"{laneName}.{r.FieldName()}";
                             sb.AppendLine("\t\tstruct {");
-                            EmitLaneMembers(sb, lane, groupStart, classNames, ref paddingId, "\t\t\t");
+                            EmitLaneMembers(sb, lane, groupStart, classNames, "\t\t\t");
                             sb.AppendLine($"\t\t}} {laneName};");
                         }
                     }
@@ -497,17 +496,20 @@ public partial class peripheralType
     }
 
     // Emit a sequence of registers belonging to one lane, inserting padding
-    // for any internal gap between consecutive registers.
+    // for any internal gap between consecutive registers. Padding is named
+    // by the byte offset where it starts; intra-lane paddings are scoped to
+    // the lane's named struct so two lanes with padding at the same offset
+    // do not collide at peripheral scope.
     static void EmitLaneMembers(
         StringBuilder sb, List<registerType> lane, long laneStart,
-        Dictionary<registerType, string> classNames, ref int paddingId, string indent)
+        Dictionary<registerType, string> classNames, string indent)
     {
         var cursor = laneStart;
         foreach (var r in lane)
         {
             var off = r.addressOffset.ToValue();
             if (off > cursor)
-                sb.AppendLine($"{indent}opsy::utility::padding<{off - cursor}> _p{paddingId++};");
+                sb.AppendLine($"{indent}opsy::utility::padding<{off - cursor}> _p{cursor};");
 
             var template = (r.accessSpecified ? r.access : accessType.readwrite) switch
             {
