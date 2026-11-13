@@ -32,6 +32,10 @@ static_assert(cr(0x1).en());
 static_assert(!cr(0x2).en());
 static_assert(cr(0x80000000u)._int());
 static_assert((~cr(0)).value() == 0xFFFFFFFFu);
+static_assert((cr(0x51) & cr::mode_f(7)).value() == 0x50);
+static_assert((cr(0x51) ^ cr(0x01)).value() == 0x50);
+static_assert(cr(0x51) == cr(0x51) && cr(0x51) != cr(0x50));
+static_assert((cr(0x51) & cr::en_f()) == cr::en_f());
 static_assert(cr::reset_value == 0x10);
 static_assert(std::is_same_v<decltype(cr(0).value()), uint32_t>);
 static_assert(std::is_same_v<decltype(ctl_p::ctl_small_r(0).value()), uint8_t>);
@@ -55,6 +59,20 @@ static_assert(offsetof(bank_p, word) == 0x50);
 static_assert(std::is_same_v<decltype(porta_p::porta_bsrr), opsy::utility::write_only_memory<uint32_t, porta_p::porta_bsrr_r>>);
 static_assert(std::is_same_v<decltype(dma_p::dma_isr), opsy::utility::read_only_memory<uint32_t, dma_p::dma_isr_r>>);
 static_assert(std::is_same_v<decltype(ctl_p::ctl_cr), opsy::utility::memory<uint32_t, cr>>);
+// ... and, when the SVD states the access on the fields only, what they have in common.
+static_assert(std::is_same_v<decltype(ctl_p::ctl_sr), opsy::utility::read_only_memory<uint32_t, ctl_p::ctl_sr_r>>);
+static_assert(std::is_same_v<decltype(ctl_p::ctl_icr), opsy::utility::write_only_memory<uint32_t, ctl_p::ctl_icr_r>>);
+
+// ── A read-only field is read, never written ───────────────────────────────
+static_assert(!std::is_convertible_v<cr::rdy_f, cr>);
+static_assert(!std::is_convertible_v<cr::rdy_f, opsy::utility::clear_set<cr>>);
+static_assert(std::is_convertible_v<cr::en_f, cr>);
+static_assert(cr(0x2).rdy());
+static_assert(cr::rdy_f::mask == 0x2);
+
+// ── A value in range is accepted, at the limit too ─────────────────────────
+static_assert(cr(cr::mode_f(7)).value() == 0x70);
+static_assert(cr(cr::div_f(511)).value() == 0x01FF0000u);
 
 // ── Instances ──────────────────────────────────────────────────────────────
 static_assert(std::is_same_v<decltype(porta), porta_p&>);
@@ -77,6 +95,11 @@ void driver()
 	ctl.ctl_cr <<= cr::mode_f(2) || cr::div_f(7) || atomic;
 	while (!ctl.ctl_cr.load().rdy()) {}
 	if (ctl.ctl_cr.load().mode() != 2u) {}
+	if ((ctl.ctl_cr.load() & cr::en_f()) == cr::en_f()) {}
+	while (ctl.ctl_sr.load().busy()) {}
+	ctl.ctl_icr = ctl_p::ctl_icr_r::cbusy_f();
+	// A value only known at run time is masked to the field, not rejected.
+	ctl.ctl_cr <<= cr::mode_f(static_cast<uint8_t>(ctl.ctl_sr.load().level()));
 	porta.porta_bsrr = porta_p::porta_bsrr_r::bs0_f();
 	dma1.dma_c1cr = dma_p::dma_cxcr_r::en_f() | dma_p::dma_cxcr_r::prio_f(3);
 }

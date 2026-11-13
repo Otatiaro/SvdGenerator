@@ -38,6 +38,7 @@ namespace SvdGenerator
                 var sb = new StringBuilder();
                 sb.Append(banner);
                 AppendLines(sb, "#pragma once", "", "#if __has_include(\"memory.hpp\")", "#include \"memory.hpp\"", "#else", "#include <utility/memory.hpp>", "#endif", "", $"namespace {ns}", "{", "");
+                sb.Append(Support);
 
                 var types = group.ToList();
 
@@ -101,6 +102,21 @@ namespace SvdGenerator
             AppendLines(sb, "");
             return sb.ToString();
         }
+
+        // Declared in every peripheral header, never defined. A field constructor
+        // calls it when its argument is a constant that does not fit the field:
+        // the compiler then stops on the attribute (GCC, once it optimises) or on
+        // a call that is not constexpr (any compiler, in a constant expression).
+        // A value only known at run time is masked to the width of the field.
+        const string Support =
+            "namespace detail\n" +
+            "{\n" +
+            "#if __has_cpp_attribute(gnu::error)\n" +
+            "[[gnu::error(\"this constant does not fit the register field it is given to\")]]\n" +
+            "#endif\n" +
+            "void field_value_out_of_range();\n" +
+            "} // detail\n" +
+            "\n";
 
         static string Interrupts(Device device)
         {
@@ -170,16 +186,30 @@ namespace SvdGenerator
             sb.AppendLine();
             var rangeCheck = IsExactType(width) ? "" : " & range";
             var defaultValue = width == 1 ? " = true" : "";
-            sb.AppendLine($"\tconstexpr {className}({ValueType(width)} value{defaultValue}) : value_(value{rangeCheck}) {{}}");
+            var body = IsExactType(width) ? "{}" : "{ if (__builtin_constant_p(value) && value > range) detail::field_value_out_of_range(); }";
+            sb.AppendLine($"\tconstexpr {className}({ValueType(width)} value{defaultValue}) : value_(value{rangeCheck}) {body}");
             sb.AppendLine($"\tconstexpr operator {ValueType(width)}() const {{return value_;}}");
 
-            sb.AppendLine(width == 1
-                ? $"\tconstexpr operator {regClassName}() const {{return value_ ? mask : 0;}}"
-                : $"\tconstexpr operator {regClassName}() const {{return static_cast<{ValueType(width + offset)}>(static_cast<{ValueType(width + offset)}>(value_) << offset);}}");
+            // A read-only field is read from a register value, never written
+            // into one: it has no conversion to the register type, so it cannot
+            // reach an assignment, a |= or a <<=.
+            if (field.Access != Access.ReadOnly)
+            {
+                sb.AppendLine(width == 1
+                    ? $"\tconstexpr operator {regClassName}() const {{return value_ ? mask : 0;}}"
+                    : $"\tconstexpr operator {regClassName}() const {{return static_cast<{ValueType(width + offset)}>(static_cast<{ValueType(width + offset)}>(value_) << offset);}}");
 
-            sb.AppendLine($"\tconstexpr operator opsy::utility::clear_set<{regClassName}>() const {{return opsy::utility::clear_set<{regClassName}>(mask, *this);}}");
-            sb.AppendLine($"\tconstexpr auto operator|({regClassName} other) const -> {regClassName} {{ return static_cast<{regClassName}>(*this) | other.value_;}}");
-            sb.AppendLine($"\tconstexpr auto operator||(opsy::utility::clear_set<{regClassName}> other) const -> opsy::utility::clear_set<{regClassName}> {{return opsy::utility::clear_set<{regClassName}>({regClassName}(mask) | other.clear(), *this | other.set()); }}");
+                sb.AppendLine($"\tconstexpr operator opsy::utility::clear_set<{regClassName}>() const {{return opsy::utility::clear_set<{regClassName}>(mask, *this);}}");
+                sb.AppendLine($"\tconstexpr auto operator|({regClassName} other) const -> {regClassName} {{ return static_cast<{regClassName}>(*this) | other.value_;}}");
+                sb.AppendLine($"\tconstexpr auto operator||(opsy::utility::clear_set<{regClassName}> other) const -> opsy::utility::clear_set<{regClassName}> {{return opsy::utility::clear_set<{regClassName}>({regClassName}(mask) | other.clear(), *this | other.set()); }}");
+            }
+
+            // Without this, `a | b` between two fields that do not combine falls
+            // back to the built-in | on their values, and the resulting integer
+            // converts to any register.
+            sb.AppendLine(field.Access != Access.ReadOnly
+                ? $"\ttemplate<typename T> requires (std::is_class_v<T> && !std::is_convertible_v<T, {regClassName}> && !std::is_same_v<T, opsy::utility::atomic_tag>) void operator|(T) const = delete; // a field of another register, or a read-only field, is not part of this register's value"
+                : $"\ttemplate<typename T> requires std::is_class_v<T> void operator|(T) const = delete; // a read-only field is not part of the value written to the register");
 
             sb.AppendLine();
             sb.AppendLine("private:");
@@ -223,7 +253,11 @@ namespace SvdGenerator
             sb.AppendLine();
             sb.AppendLine($"\tconstexpr {className}({type} value) : value_(value) {{}}");
             sb.AppendLine($"\tconstexpr auto operator |({className} other) const -> {className} {{ return value_ | other.value_; }}");
+            sb.AppendLine($"\tconstexpr auto operator &({className} other) const -> {className} {{ return value_ & other.value_; }}");
+            sb.AppendLine($"\tconstexpr auto operator ^({className} other) const -> {className} {{ return value_ ^ other.value_; }}");
             sb.AppendLine($"\tconstexpr auto operator ~() const -> {className} {{ return ~value_; }}");
+            sb.AppendLine($"\tconstexpr bool operator ==(const {className}&) const = default;");
+            sb.AppendLine($"\tauto operator ||(opsy::utility::atomic_tag) const = delete; // a register value is built with |; put || between the fields of a <<= to clear and set them");
             sb.AppendLine($"\t[[nodiscard]] constexpr auto value() const {{ return value_; }}");
 
             sb.AppendLine();
@@ -246,7 +280,7 @@ namespace SvdGenerator
             a.Name == b.Name &&
             a.Width == b.Width &&
             a.Offset == b.Offset &&
-            a.DeclaredAccess == b.DeclaredAccess;
+            a.Access == b.Access;
 
         // Two registers share one class when they have the same fields, size and
         // reset value (C0CR, C1CR, ... become cxcr_r).

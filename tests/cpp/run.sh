@@ -40,9 +40,11 @@ fi
 "${generator[@]}" "$(native "$here/fixture.svd")" "$(native "$build/FIXTURE")" --check
 test -f "$build/FIXTURE/memory.hpp"
 
+# Compiled for real, with the optimiser on: the check on constant field values
+# is raised when code is generated, which -fsyntax-only never reaches.
 # shellcheck disable=SC2206
 flags=(-std=c++20 -Wall -Wextra -Wshadow -Wcast-align -Wconversion -Wsign-conversion
-       -Wdouble-promotion -Werror -O1 -fsyntax-only -I"$(native "$build")" ${CXXFLAGS:-})
+       -Wdouble-promotion -Werror -O1 -c -o "$(native "$build/out.o")" -I"$(native "$build")" ${CXXFLAGS:-})
 
 fail=0
 
