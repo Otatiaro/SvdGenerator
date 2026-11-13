@@ -36,16 +36,34 @@ You have two ways to provide that header:
 
 The generated code needs C++20 and GCC or Clang.
 
+## Install
+
+Each [GitHub Release](../../releases) carries:
+
+- **Self-contained binaries** for Windows, Linux and macOS: nothing to
+  install, run the file.
+- **A .NET tool package** (`SvdGenerator.<version>.nupkg`), for machines
+  that have the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+  Download it into a directory and install from there:
+
+  ```sh
+  dotnet tool install --global SvdGenerator --add-source <directory> --version <version>
+  svdgenerator <input.svd> <output_dir>
+  ```
+
+  A repository can pin the version it generates its headers with in a
+  [tool manifest](https://learn.microsoft.com/dotnet/core/tools/local-tools-how-to-use)
+  (`dotnet new tool-manifest`, then the same command without `--global`),
+  so that `dotnet tool restore` gives every machine and the CI the same
+  generator.
+
 ## Build
 
-Requires the [.NET 8 SDK](https://dotnet.microsoft.com/download).
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
 
 ```sh
 dotnet build -c Release
 ```
-
-Pre-built self-contained binaries for Windows, Linux, and macOS are
-attached to each [GitHub Release](../../releases).
 
 ## Usage
 
@@ -336,7 +354,7 @@ the compiler from `CXX`; with `arm-none-eabi-g++`, pass
 
 Tag a commit with a SemVer tag and push it; the release workflow
 publishes self-contained `win-x64`, `linux-x64`, and `osx-arm64`
-binaries to a GitHub Release.
+binaries and the .NET tool package to a GitHub Release.
 
 ```sh
 git tag v1.0.0
