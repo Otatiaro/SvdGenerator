@@ -582,8 +582,18 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The same workflow then pushes the tool package to nuget.org, when the
-repository has a `NUGET_API_KEY` secret; without it that step is skipped.
+The same workflow then pushes the tool package to nuget.org by
+[trusted publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing):
+no API key is stored, nuget.org gives one that lives an hour to a run it
+recognises. It takes two things, once:
+
+- on nuget.org, a trusted publishing policy for repository owner
+  `Otatiaro`, repository `SvdGenerator`, workflow file `release.yml`, no
+  environment;
+- in this repository, an Actions variable `NUGET_USER` holding the
+  nuget.org profile name that owns the policy. Without it the two steps
+  are skipped.
+
 A version pushed to nuget.org cannot be replaced nor removed, only
 unlisted.
 
