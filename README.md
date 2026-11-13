@@ -582,7 +582,9 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The same workflow then pushes the tool package to nuget.org by
+The same workflow pushes the tool package to nuget.org, in a job of its
+own that only waits for the package: the tool is one platform-independent
+package and has nothing to wait for from the binaries. It publishes by
 [trusted publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing):
 no API key is stored, nuget.org gives one that lives an hour to a run it
 recognises. It takes two things, once:
@@ -591,8 +593,8 @@ recognises. It takes two things, once:
   `Otatiaro`, repository `SvdGenerator`, workflow file `release.yml`, no
   environment;
 - in this repository, an Actions variable `NUGET_USER` holding the
-  nuget.org profile name that owns the policy. Without it the two steps
-  are skipped.
+  nuget.org profile name that owns the policy. Without it the job is
+  skipped.
 
 A version pushed to nuget.org cannot be replaced nor removed, only
 unlisted.

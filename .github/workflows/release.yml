@@ -149,7 +149,6 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write   # create the GitHub Release
-      id-token: write   # let GitHub issue the token nuget.org exchanges for a key
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -162,28 +161,44 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
 
+  # Publication to nuget.org, by trusted publishing: no API key is stored.
+  # GitHub issues a short-lived token for this run, nuget.org checks it
+  # against the policy registered there for this repository and this
+  # workflow file, and gives back a key that lives one hour.
+  #
+  # A job of its own, that only needs the package: the tool is one
+  # platform-independent package, built and tried by the pack job, and has
+  # nothing to wait for from the binaries. A macOS runner that takes ten
+  # minutes to come does not hold the publication, and a binary that fails
+  # does not cancel it.
+  #
+  # Runs on a tag, when the repository has a NUGET_USER variable (the
+  # nuget.org profile name the policy belongs to). A version pushed to
+  # nuget.org cannot be replaced nor removed, only unlisted.
+  nuget:
+    name: publish to nuget.org
+    needs: pack
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') && vars.NUGET_USER != ''
+    permissions:
+      id-token: write   # let GitHub issue the token nuget.org exchanges for a key
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: SvdGenerator-nupkg
+          path: dist
+
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
-      # Publication to nuget.org, by trusted publishing: no API key is stored.
-      # GitHub issues a short-lived token for this run, nuget.org checks it
-      # against the policy registered there for this repository and this
-      # workflow file, and gives back a key that lives one hour.
-      #
-      # Runs when the repository has a NUGET_USER variable (the nuget.org
-      # profile name the policy belongs to), after the GitHub Release exists.
-      # A version pushed to nuget.org cannot be replaced nor removed, only
-      # unlisted: these are the last steps, and only on a tag.
       - name: Get a short-lived nuget.org key
-        if: vars.NUGET_USER != ''
         uses: NuGet/login@v1
         id: nuget
         with:
           user: ${{ vars.NUGET_USER }}
 
       - name: Push the tool to nuget.org
-        if: vars.NUGET_USER != ''
         env:
           NUGET_KEY: ${{ steps.nuget.outputs.NUGET_API_KEY }}
         run: |
