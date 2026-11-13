@@ -158,3 +158,20 @@ jobs:
           files: dist/*
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Push the tool to nuget.org
+        # Runs when the repository has a NUGET_API_KEY secret, after the GitHub
+        # Release exists. A version pushed to nuget.org cannot be replaced nor
+        # removed, only unlisted: this is the last step, and only on a tag.
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        if: env.NUGET_API_KEY != ''
+        run: |
+          dotnet nuget push dist/*.nupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "$NUGET_API_KEY" \
+            --skip-duplicate

@@ -38,18 +38,21 @@ Each [GitHub Release](../../releases) carries:
   install, run the file.
 - **A .NET tool package** (`SvdGenerator.<version>.nupkg`), for machines
   that have the [.NET 10 SDK](https://dotnet.microsoft.com/download).
-  Download it into a directory and install from there:
+  The release workflow also pushes it to nuget.org:
 
   ```sh
-  dotnet tool install --global SvdGenerator --add-source <directory> --version <version>
+  dotnet tool install --global SvdGenerator
   svdgenerator <input.svd> <output_dir>
   ```
 
+  To install from the file of a release instead, download it into a
+  directory and add `--add-source <directory> --version <version>`.
+
   A repository can pin the version it generates its headers with in a
   [tool manifest](https://learn.microsoft.com/dotnet/core/tools/local-tools-how-to-use)
-  (`dotnet new tool-manifest`, then the same command without `--global`),
+  (`dotnet new tool-manifest`, then `dotnet tool install SvdGenerator`),
   so that `dotnet tool restore` gives every machine and the CI the same
-  generator.
+  generator, run as `dotnet tool run svdgenerator`.
 
 ## Build
 
@@ -79,6 +82,47 @@ Reads the SVD file and writes into `<output_dir>`:
 
 Everything is in a namespace named after the device, in upper case
 (e.g. `STM32H563`).
+
+### Committing the headers, or generating them during the build
+
+Both work; they do not cost the same.
+
+**Committed headers.** Generate once, commit the directory, and let the CI
+run `--check` (below) so that the headers cannot drift from the SVD file
+and the generator. Building the firmware needs no generator and no .NET,
+and a change of SVD file or of generator shows as a diff to review.
+
+**Headers generated during the build.** Only the SVD file is in the
+repository. [`cmake/SvdGenerator.cmake`](cmake/SvdGenerator.cmake) does
+it for CMake:
+
+```cmake
+include(SvdGenerator.cmake)
+svdgenerator_add_device(stm32h563 SVD ${CMAKE_SOURCE_DIR}/vendor/STM32H563.svd)
+target_link_libraries(firmware PRIVATE stm32h563)   # <STM32H563/rcc.hpp>
+```
+
+The headers go to the build directory and are generated before anything
+that includes them is compiled. They are regenerated when the SVD file
+changes, and a header whose content does not change is not rewritten, so
+it recompiles nothing. [`examples/cmake`](examples/cmake) is a complete
+project, built by the CI. What this costs:
+
+- every machine that builds the firmware needs the generator: the .NET
+  SDK and the tool, or a self-contained binary given through
+  `SVDGENERATOR_COMMAND`;
+- nothing shows in a pull request when the generated API changes;
+- tools that skip what git ignores, code search and language models
+  among them, do not see headers that live in a build directory;
+- a change of the SVD file changes the checksum written at the top of
+  every header, so everything that includes one is recompiled.
+
+For another build system, `--list` prints the files a run would write,
+one per line, without writing them:
+
+```sh
+SvdGenerator <input.svd> [<output_dir>] --list
+```
 
 ### Finding one's way in the output
 
@@ -534,6 +578,11 @@ binaries and the .NET tool package to a GitHub Release.
 git tag v1.0.0
 git push origin v1.0.0
 ```
+
+The same workflow then pushes the tool package to nuget.org, when the
+repository has a `NUGET_API_KEY` secret; without it that step is skipped.
+A version pushed to nuget.org cannot be replaced nor removed, only
+unlisted.
 
 Untagged local builds carry the version `0.0.0-dev`.
 

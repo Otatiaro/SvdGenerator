@@ -280,6 +280,75 @@ namespace SvdGenerator.Tests
             Assert.Contains("Unknown option --chekc", error.ToString());
         }
 
+        [Fact]
+        public void List_names_the_files_and_writes_nothing()
+        {
+            using var input = new TempDirectory();
+            using var output = new TempDirectory();
+            var svd = input.Write("device.svd", SimpleDevice());
+            var target = Path.Combine(output.Path, "not", "created");
+
+            var listed = new StringWriter();
+            var code = Program.Run(new[] { svd, target, "--list" }, listed, new StringWriter());
+
+            Assert.Equal(Program.ExitOk, code);
+            var prefix = target.Replace('\\', '/') + "/";
+            Assert.Equal(
+                new[] { "README.md", "device.hpp", "interrupts.hpp", "mmio.hpp", "p.hpp", "vectors.hpp" }.Select(n => prefix + n),
+                listed.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries));
+            Assert.DoesNotContain('\r', listed.ToString());
+            Assert.False(Directory.Exists(target));
+            Assert.Empty(output.Names());
+        }
+
+        [Fact]
+        public void List_without_a_directory_gives_bare_names()
+        {
+            using var input = new TempDirectory();
+            var svd = input.Write("device.svd", SimpleDevice());
+
+            var listed = new StringWriter();
+            var code = Program.Run(new[] { svd, "--list" }, listed, new StringWriter());
+
+            Assert.Equal(Program.ExitOk, code);
+            Assert.Equal("README.md\ndevice.hpp\ninterrupts.hpp\nmmio.hpp\np.hpp\nvectors.hpp\n", listed.ToString());
+        }
+
+        [Fact]
+        public void List_is_exactly_what_a_run_writes()
+        {
+            using var input = new TempDirectory();
+            using var output = new TempDirectory();
+            var svd = input.Write("device.svd", SimpleDevice());
+
+            var listed = new StringWriter();
+            Program.Run(new[] { svd, "--list" }, listed, new StringWriter());
+            Program.Run(new[] { svd, output.Path }, new StringWriter(), new StringWriter());
+
+            Assert.Equal(output.Names(), listed.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries).OrderBy(n => n, StringComparer.Ordinal));
+        }
+
+        [Theory]
+        [InlineData("--check")]
+        [InlineData("--force")]
+        public void List_does_not_go_with_an_option_that_reads_or_writes_the_directory(string option)
+        {
+            var error = new StringWriter();
+
+            var code = Program.Run(new[] { "a.svd", "out", "--list", option }, new StringWriter(), error);
+
+            Assert.Equal(Program.ExitError, code);
+            Assert.Contains("--list writes nothing", error.ToString());
+        }
+
+        [Fact]
+        public void A_run_without_list_still_needs_its_directory()
+        {
+            var code = Program.Run(new[] { "a.svd" }, new StringWriter(), new StringWriter());
+
+            Assert.Equal(Program.ExitError, code);
+        }
+
         [Theory]
         [InlineData("DEVICE", "device_2.hpp")]
         [InlineData("INTERRUPTS", "interrupts_2.hpp")]

@@ -43,6 +43,47 @@ jobs:
       - name: Generate the fixture, compile what must compile, reject what must not
         run: tests/cpp/run.sh dotnet run --project SvdGenerator.csproj -c Release --no-build --no-launch-profile --
 
+  cmake:
+    name: CMake example, headers generated during the build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish SvdGenerator
+        run: dotnet publish SvdGenerator.csproj -c Release -o gen
+
+      - name: Configure and build
+        run: |
+          cmake -S examples/cmake -B build -DSVDGENERATOR_COMMAND="$PWD/gen/SvdGenerator"
+          cmake --build build
+          test -f build/svd/FIXTURE/ctl.hpp
+          test -f build/svd/FIXTURE/README.md
+
+      - name: Nothing is regenerated nor recompiled when nothing changed
+        run: |
+          set -euo pipefail
+          object=$(find build -name 'driver.cpp.o')
+          before=$(stat -c %Y "$object" build/svd/FIXTURE.stamp build/svd/FIXTURE/ctl.hpp)
+          sleep 1
+          cmake --build build
+          test "$before" = "$(stat -c %Y "$object" build/svd/FIXTURE.stamp build/svd/FIXTURE/ctl.hpp)"
+
+      - name: A touched SVD file regenerates, and recompiles nothing while the headers are the same
+        run: |
+          set -euo pipefail
+          object=$(find build -name 'driver.cpp.o')
+          before=$(stat -c %Y "$object" build/svd/FIXTURE/ctl.hpp)
+          stamp=$(stat -c %Y build/svd/FIXTURE.stamp)
+          sleep 1
+          touch tests/cpp/fixture.svd
+          cmake --build build
+          test "$stamp" != "$(stat -c %Y build/svd/FIXTURE.stamp)"
+          test "$before" = "$(stat -c %Y "$object" build/svd/FIXTURE/ctl.hpp)"
+
   smoke:
     name: smoke (${{ matrix.vendor }}/${{ matrix.file }})
     runs-on: ubuntu-latest
