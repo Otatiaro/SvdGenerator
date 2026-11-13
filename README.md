@@ -73,10 +73,45 @@ Reads the SVD file and writes into `<output_dir>`:
 - `vectors.hpp`, the vector table of the device, built at compile time;
 - `mmio.hpp`, the register building blocks, the same for every
   device. Two devices generated in two directories can be included in one
-  translation unit.
+  translation unit;
+- `README.md`, the page of the directory: where the headers come from
+  and where each peripheral is.
 
 Everything is in a namespace named after the device, in upper case
 (e.g. `STM32H563`).
+
+### Finding one's way in the output
+
+The headers of a real device are large: 9.8 MB for the STM32H563, 700 KB
+and 12 800 lines for its `rcc.hpp` alone. Nobody reads that from the top,
+and a language model cannot. Two generated things replace the reading:
+
+- **`README.md`** says which SVD file, which version and checksum, which
+  generator the directory comes from, reproduces the notice of the SVD,
+  and lists every peripheral with its address, its class, its header, the
+  line where the class starts and its interrupts.
+- **Each peripheral header starts with a map**, one line per register:
+
+  ```cpp
+  // class rcc_p, lines 87-12786: rcc 0x44020C00, sec_rcc 0x54020C00
+  //   offset  access  member   class      lines     fields
+  //   0x000   rw      cr       cr_r       93-609    hsion[0] hsirdy[1](r) hsikeron[2] hsidiv[4:3] ...
+  //   0x010   rw      hsicfgr  hsicfgr_r  611-673   hsical[11:0](r) hsitrim[22:16]
+  //   0x014   r       crrcr    crrcr_r    675-714   hsi48cal[9:0]
+  ```
+
+  `lines` runs from the comment of the class to its closing brace: read
+  those lines and you have the register, its fields, their descriptions
+  and their named values. A cluster is one line followed by its
+  registers, with offsets from its own start. `(r)` and `(w)` mark a
+  field that is read-only or write-only in a register that is not.
+
+The map of `rcc.hpp` is 58 lines; the maps of the whole STM32H563 are 2%
+of its headers.
+
+A `README.md` of your own in the output directory is not overwritten:
+the run stops with exit code 2. The generated one says what yours
+probably said; delete yours, or pass `--force` once.
 
 Everything is generated in memory first: when the SVD cannot be read or
 converted, the directory is left as it was and the error is one line on

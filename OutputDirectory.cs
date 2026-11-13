@@ -104,6 +104,8 @@ namespace SvdGenerator
         /// </summary>
         public static bool IsGenerated(string name, string content)
         {
+            if (name.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+                return content.StartsWith(Emitter.MarkdownBannerStart, StringComparison.Ordinal);
             if (!name.EndsWith(".hpp", StringComparison.OrdinalIgnoreCase))
                 return false;
             if (content.StartsWith(Emitter.BannerStart, StringComparison.Ordinal))

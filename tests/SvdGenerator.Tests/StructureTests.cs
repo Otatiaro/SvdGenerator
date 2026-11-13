@@ -36,7 +36,7 @@ namespace SvdGenerator.Tests
         {
             var files = Generate(Device(Peripheral(peripheral, 0x1000, SimpleRegister(register), extra: group.Length == 0 ? "" : Group(group))));
 
-            var header = files.Single(f => f.Key != "device.hpp" && f.Key != "interrupts.hpp" && f.Key != "vectors.hpp" && f.Key != Emitter.RegistersFile).Value;
+            var header = files.Single(f => f.Key != "device.hpp" && f.Key != "interrupts.hpp" && f.Key != "vectors.hpp" && f.Key != Emitter.RegistersFile && f.Key != Emitter.ReadmeFile).Value;
             Assert.Contains($"> {member};\n", header);
             Assert.Contains($"class {member}_r {{", header);
         }
@@ -60,7 +60,7 @@ namespace SvdGenerator.Tests
                 Peripheral("GPIOB", 0x2000, Register("GPIOB_MODER", 0, Field("MODE0", 0, 2))) +
                 Peripheral("GPIOC", 0x3000, derivedFrom: "GPIOB")));
 
-            Assert.Equal(new[] { "device.hpp", "gpio.hpp", "interrupts.hpp", "mmio.hpp", "vectors.hpp" }, files.Keys);
+            Assert.Equal(new[] { "README.md", "device.hpp", "gpio.hpp", "interrupts.hpp", "mmio.hpp", "vectors.hpp" }, files.Keys);
             Assert.Equal(new[] { "gpio_p" }, Classes(files["gpio.hpp"], "_p"));
             Assert.Equal(new[] { "gpio_p& gpioa", "gpio_p& gpiob", "gpio_p& gpioc" }, Instances(files["gpio.hpp"]));
         }
@@ -82,7 +82,7 @@ namespace SvdGenerator.Tests
                 Peripheral("CRC", 0x1000, Register("CR", 0, Field("EN", 0, 1))) +
                 Peripheral("RNG", 0x2000, Register("CR", 0, Field("EN", 0, 1)))));
 
-            Assert.Equal(new[] { "crc.hpp", "device.hpp", "interrupts.hpp", "mmio.hpp", "rng.hpp", "vectors.hpp" }, files.Keys);
+            Assert.Equal(new[] { "README.md", "crc.hpp", "device.hpp", "interrupts.hpp", "mmio.hpp", "rng.hpp", "vectors.hpp" }, files.Keys);
         }
 
         [Fact]
@@ -104,7 +104,7 @@ namespace SvdGenerator.Tests
 
             var files = Generate(Device(Timer("TIM1", 0x1000, 16) + Timer("TIM2", 0x2000, 32) + Timer("TIM5", 0x5000, 32) + Timer("TIM8", 0x8000, 16)));
 
-            Assert.Equal(new[] { "device.hpp", "interrupts.hpp", "mmio.hpp", "tim.hpp", "vectors.hpp" }, files.Keys);
+            Assert.Equal(new[] { "README.md", "device.hpp", "interrupts.hpp", "mmio.hpp", "tim.hpp", "vectors.hpp" }, files.Keys);
             Assert.Equal(new[] { "tim1_p", "tim2_p" }, Classes(files["tim.hpp"], "_p"));
             Assert.Equal(new[] { "tim1_p& tim1", "tim1_p& tim8", "tim2_p& tim2", "tim2_p& tim5" }, Instances(files["tim.hpp"]));
         }
@@ -117,7 +117,7 @@ namespace SvdGenerator.Tests
                 Peripheral("GPIOB", 0x2000, Register("MODER", 0, Field("MODE0", 0, 2))) +
                 Peripheral("GPIOI", 0x9000, Register("MODER", 0, Field("MODE0", 0, 1)))));
 
-            Assert.Equal(new[] { "device.hpp", "gpio.hpp", "interrupts.hpp", "mmio.hpp", "vectors.hpp" }, files.Keys);
+            Assert.Equal(new[] { "README.md", "device.hpp", "gpio.hpp", "interrupts.hpp", "mmio.hpp", "vectors.hpp" }, files.Keys);
             Assert.Equal(new[] { "gpio_p", "gpioi_p" }, Classes(files["gpio.hpp"], "_p"));
         }
 
