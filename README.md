@@ -113,6 +113,33 @@ version on the include path. Line endings are LF on every platform.
   …) or the register's own `value()` method are prefixed with an
   underscore (`_int`, `_value`).
 
+## What the generated code refuses
+
+Each of these is a compile error, checked by `tests/cpp/must_not_compile.cpp`:
+
+- **A field given to another register.** `rcc.rcc_ahb2enr |= rcc_ahb1enr_r::gpdma1en_f()`
+  does not compile, nor does `a_f() | b_f()` between fields of two registers.
+- **A register read or written against its access.** The storage type
+  follows the register's access (`read_only_memory`, `write_only_memory`).
+  When the SVD states the access on the fields only, as ST does, the
+  register takes what they have in common: a status register made of
+  read-only flags cannot be assigned, an interrupt-clear register made of
+  write-only bits cannot be read.
+- **A read-only field written.** It has no conversion to the register
+  value, so it cannot reach `=`, `|=` or `<<=`. It is still read
+  (`rcc.rcc_cr.load().hserdy()`), and its `mask` is still there. When the
+  SVD is wrong about a field, build the value from the raw register
+  constructor: `reg_r(reg_r::field_f::mask)`.
+- **A constant that does not fit its field.** `pll1n_f(600)` on a 9-bit
+  field stops the build with *this constant does not fit the register
+  field it is given to*. GCC raises it when it optimises (`-Og` and
+  above, not `-O0`); in a constant expression every compiler does. A
+  value only known at run time is masked to the width of the field.
+- **`|` where `||` is meant.** `reg <<= (a_f(1) | b_f(2)) || atomic` is
+  rejected on that line.
+
+Register values also compare and mask: `==`, `!=`, `&`, `^`, `|`, `~`.
+
 ## Example
 
 ```cpp

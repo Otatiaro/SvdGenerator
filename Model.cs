@@ -26,8 +26,8 @@ namespace SvdGenerator
         public required int Offset { get; init; }
         public required int Width { get; init; }
 
-        /// <summary>Access stated on the field itself; null when the SVD leaves it to the register.</summary>
-        public required Access? DeclaredAccess { get; init; }
+        /// <summary>Access of the field: its own when the SVD states one, otherwise the register's.</summary>
+        public required Access Access { get; init; }
     }
 
     public sealed class Register
@@ -41,7 +41,12 @@ namespace SvdGenerator
         /// <summary>Size in bits: 8, 16, 32 or 64.</summary>
         public required int Size { get; init; }
 
-        /// <summary>Access of the register, inherited from the cluster, peripheral or device when not stated.</summary>
+        /// <summary>
+        /// Access of the register as a whole. With fields, it is what they have
+        /// in common: read-only when none can be written, write-only when none
+        /// can be read. Without fields, it is the access stated on the register,
+        /// or inherited from the cluster, peripheral or device.
+        /// </summary>
         public required Access Access { get; init; }
 
         /// <summary>Reset value as written in the SVD (on the register or the one it derives from).</summary>

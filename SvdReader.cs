@@ -420,9 +420,17 @@ namespace SvdGenerator
                 if (size != 8 && size != 16 && size != 32 && size != 64)
                     throw new SvdException($"{what}: a size of {size} bits is not supported (8, 16, 32 or 64)");
 
-                var access = raw.accessSpecified ? ToAccess(raw.access) : placed.Defaults.Access;
+                var declared = raw.accessSpecified ? ToAccess(raw.access) : placed.Defaults.Access;
                 var offset = placed.BaseOffset + Naming.Number(raw.addressOffset ?? "0", $"{what}: addressOffset");
-                var fields = (raw.fields ?? Array.Empty<fieldType>()).SelectMany(f => ExpandField(f, what, size)).ToList();
+                var fields = (raw.fields ?? Array.Empty<fieldType>()).SelectMany(f => ExpandField(f, what, size, declared)).ToList();
+
+                // Vendors such as ST state the access on the fields and leave
+                // the register read-write: a status register made of read-only
+                // flags is read-only all the same.
+                var access = fields.Count == 0 ? declared
+                    : fields.All(f => f.Access == Access.ReadOnly) ? Access.ReadOnly
+                    : fields.All(f => f.Access == Access.WriteOnly) ? Access.WriteOnly
+                    : Access.ReadWrite;
 
                 Register Make(string name, long at) => new()
                 {
@@ -450,7 +458,7 @@ namespace SvdGenerator
                     yield return Make(template.Replace("%s", indices[i]), offset + i * increment);
             }
 
-            static IEnumerable<Field> ExpandField(fieldType raw, string register, int registerSize)
+            static IEnumerable<Field> ExpandField(fieldType raw, string register, int registerSize, Access registerAccess)
             {
                 if (string.IsNullOrWhiteSpace(raw.name))
                     throw new SvdException($"{register}: a field has no name");
@@ -468,7 +476,7 @@ namespace SvdGenerator
                         Description = raw.description ?? string.Empty,
                         Offset = at,
                         Width = width,
-                        DeclaredAccess = raw.accessSpecified ? ToAccess(raw.access) : null,
+                        Access = raw.accessSpecified ? ToAccess(raw.access) : registerAccess,
                     };
                 }
 
