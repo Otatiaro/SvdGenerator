@@ -36,7 +36,7 @@ namespace SvdGenerator.Tests
         {
             var files = Generate(Device(Peripheral(peripheral, 0x1000, SimpleRegister(register), extra: group.Length == 0 ? "" : Group(group))));
 
-            var header = files.Single(f => f.Key != "device.hpp" && f.Key != "interrupts.hpp" && f.Key != Emitter.RegistersFile).Value;
+            var header = files.Single(f => f.Key != "device.hpp" && f.Key != "interrupts.hpp" && f.Key != "vectors.hpp" && f.Key != Emitter.RegistersFile).Value;
             Assert.Contains($"> {member};\n", header);
             Assert.Contains($"class {member}_r {{", header);
         }
@@ -60,7 +60,7 @@ namespace SvdGenerator.Tests
                 Peripheral("GPIOB", 0x2000, Register("GPIOB_MODER", 0, Field("MODE0", 0, 2))) +
                 Peripheral("GPIOC", 0x3000, derivedFrom: "GPIOB")));
 
-            Assert.Equal(new[] { "device.hpp", "gpio.hpp", "interrupts.hpp", "mmio.hpp" }, files.Keys);
+            Assert.Equal(new[] { "device.hpp", "gpio.hpp", "interrupts.hpp", "mmio.hpp", "vectors.hpp" }, files.Keys);
             Assert.Equal(new[] { "gpio_p" }, Classes(files["gpio.hpp"], "_p"));
             Assert.Equal(new[] { "gpio_p& gpioa", "gpio_p& gpiob", "gpio_p& gpioc" }, Instances(files["gpio.hpp"]));
         }
@@ -82,7 +82,7 @@ namespace SvdGenerator.Tests
                 Peripheral("CRC", 0x1000, Register("CR", 0, Field("EN", 0, 1))) +
                 Peripheral("RNG", 0x2000, Register("CR", 0, Field("EN", 0, 1)))));
 
-            Assert.Equal(new[] { "crc.hpp", "device.hpp", "interrupts.hpp", "mmio.hpp", "rng.hpp" }, files.Keys);
+            Assert.Equal(new[] { "crc.hpp", "device.hpp", "interrupts.hpp", "mmio.hpp", "rng.hpp", "vectors.hpp" }, files.Keys);
         }
 
         [Fact]
@@ -104,7 +104,7 @@ namespace SvdGenerator.Tests
 
             var files = Generate(Device(Timer("TIM1", 0x1000, 16) + Timer("TIM2", 0x2000, 32) + Timer("TIM5", 0x5000, 32) + Timer("TIM8", 0x8000, 16)));
 
-            Assert.Equal(new[] { "device.hpp", "interrupts.hpp", "mmio.hpp", "tim.hpp" }, files.Keys);
+            Assert.Equal(new[] { "device.hpp", "interrupts.hpp", "mmio.hpp", "tim.hpp", "vectors.hpp" }, files.Keys);
             Assert.Equal(new[] { "tim1_p", "tim2_p" }, Classes(files["tim.hpp"], "_p"));
             Assert.Equal(new[] { "tim1_p& tim1", "tim1_p& tim8", "tim2_p& tim2", "tim2_p& tim5" }, Instances(files["tim.hpp"]));
         }
@@ -117,7 +117,7 @@ namespace SvdGenerator.Tests
                 Peripheral("GPIOB", 0x2000, Register("MODER", 0, Field("MODE0", 0, 2))) +
                 Peripheral("GPIOI", 0x9000, Register("MODER", 0, Field("MODE0", 0, 1)))));
 
-            Assert.Equal(new[] { "device.hpp", "gpio.hpp", "interrupts.hpp", "mmio.hpp" }, files.Keys);
+            Assert.Equal(new[] { "device.hpp", "gpio.hpp", "interrupts.hpp", "mmio.hpp", "vectors.hpp" }, files.Keys);
             Assert.Equal(new[] { "gpio_p", "gpioi_p" }, Classes(files["gpio.hpp"], "_p"));
         }
 
@@ -365,6 +365,118 @@ namespace SvdGenerator.Tests
             var header = Generate(Device(Peripheral("P", 0x1000, SimpleRegister())))["device.hpp"];
 
             Assert.DoesNotContain("cpu_name", header);
+        }
+
+        // ── Vector table ───────────────────────────────────────────────────
+
+        static string Cpu(string name) =>
+            $"<cpu><name>{name}</name><revision>r0p0</revision><endian>little</endian><mpuPresent>false</mpuPresent><fpuPresent>false</fpuPresent><nvicPrioBits>2</nvicPrioBits><vendorSystickConfig>false</vendorSystickConfig></cpu>";
+
+        static string[] Exceptions(string vectors)
+        {
+            var start = vectors.IndexOf("enum class exception : std::uint8_t\n{\n", StringComparison.Ordinal);
+            var body = vectors[start..vectors.IndexOf("};", start, StringComparison.Ordinal)];
+            return Lines(body).Skip(2).Where(l => l.Contains('=')).Select(l => l.Trim().TrimEnd(',').Replace(" ", "")).ToArray();
+        }
+
+        [Theory]
+        [InlineData("CM0")]
+        [InlineData("CM0+")]
+        [InlineData("CM0PLUS")]
+        [InlineData("CM23")]
+        public void A_baseline_core_has_five_system_exceptions(string core)
+        {
+            var vectors = Generate(Device(Peripheral("P", 0x1000, SimpleRegister()), extra: Cpu(core)))["vectors.hpp"];
+
+            Assert.Equal(new[] { "nmi=2", "hard_fault=3", "svcall=11", "pendsv=14", "systick=15" }, Exceptions(vectors));
+        }
+
+        [Theory]
+        [InlineData("CM3")]
+        [InlineData("CM4")]
+        [InlineData("CM7")]
+        public void An_armv7m_core_has_the_configurable_faults(string core)
+        {
+            var vectors = Generate(Device(Peripheral("P", 0x1000, SimpleRegister()), extra: Cpu(core)))["vectors.hpp"];
+
+            Assert.Equal(
+                new[] { "nmi=2", "hard_fault=3", "mem_manage=4", "bus_fault=5", "usage_fault=6", "svcall=11", "debug_monitor=12", "pendsv=14", "systick=15" },
+                Exceptions(vectors));
+        }
+
+        [Theory]
+        [InlineData("CM33")]
+        [InlineData("ARMV8MML")]
+        public void An_armv8m_mainline_core_has_the_secure_fault(string core)
+        {
+            var vectors = Generate(Device(Peripheral("P", 0x1000, SimpleRegister()), extra: Cpu(core)))["vectors.hpp"];
+
+            Assert.Contains("secure_fault=7", Exceptions(vectors));
+            Assert.Contains($"System exceptions of the core ({core})", vectors);
+        }
+
+        [Fact]
+        public void A_device_that_names_no_core_gets_every_system_exception()
+        {
+            var vectors = Generate(Device(Peripheral("P", 0x1000, SimpleRegister())))["vectors.hpp"];
+
+            Assert.Equal(10, Exceptions(vectors).Length);
+            Assert.Contains("the SVD names no core", vectors);
+        }
+
+        [Theory]
+        [InlineData("CM0+", new[] { 4, 5, 6, 7, 8, 9, 10, 12, 13 })]
+        [InlineData("CM4", new[] { 7, 8, 9, 10, 13 })]
+        [InlineData("CM33", new[] { 8, 9, 10, 13 })]
+        public void The_handler_for_the_unhandled_leaves_the_reserved_slots_of_the_core_null(string core, int[] reserved)
+        {
+            var vectors = Generate(Device(Peripheral("P", 0x1000, SimpleRegister()), extra: Cpu(core)))["vectors.hpp"];
+
+            var cleared = Lines(vectors)
+                .Where(l => l.Contains("] = nullptr; // exception "))
+                .Select(l => int.Parse(l[(l.IndexOf("exception ", StringComparison.Ordinal) + 10)..l.IndexOf(':')]))
+                .ToArray();
+            Assert.Equal(reserved, cleared);
+            Assert.Contains("template<isr_handler_t Unhandled = nullptr, typename Decoration = undecorated>", vectors);
+            Assert.Contains("\t\thandlers_.fill(Unhandled);\n", vectors);
+        }
+
+        [Fact]
+        public void A_cortex_a_device_has_no_vector_table()
+        {
+            var files = Generate(Device(Peripheral("P", 0x1000, SimpleRegister()), extra: Cpu("CA7")));
+
+            Assert.DoesNotContain("vectors.hpp", files.Keys);
+        }
+
+        [Fact]
+        public void The_vector_table_is_in_the_device_namespace_and_knows_nothing_of_a_kernel()
+        {
+            var vectors = Generate(Device(Peripheral("P", 0x1000, SimpleRegister(), extra: Irq)))["vectors.hpp"];
+
+            Assert.Contains("#include \"interrupts.hpp\"\n\nnamespace DEV\n{\n", vectors);
+            Assert.Contains("template<isr_handler_t Unhandled = nullptr, typename Decoration = undecorated>\nclass vector_table\n", vectors);
+            Assert.Contains("constexpr auto with(auto&& install) const", vectors);
+        }
+
+        [Fact]
+        public void A_handler_is_installed_over_another_only_when_asked()
+        {
+            var vectors = Generate(Device(Peripheral("P", 0x1000, SimpleRegister(), extra: Irq)))["vectors.hpp"];
+
+            // with and install refuse a slot that has a handler; replace and reinstall do not.
+            Assert.Contains("\t\tif (!replacing && handlers_[index_of(slot)] != Unhandled)\n\t\t\thandler_already_installed(slot);\n", vectors);
+            // Declared, never defined: a compile error on a constant table, the program's own report at run time.
+            // One overload per kind of slot, given the enumerator that was taken.
+            Assert.Contains("[[noreturn]] void handler_already_installed(exception taken);\n[[noreturn]] void handler_already_installed(IRQn_Type taken);\n", vectors);
+            Assert.DoesNotContain("__builtin_trap", vectors);
+            Assert.Equal(2, Lines(vectors).Count(l => l.Contains("constexpr auto with() const -> vector_table")));
+            Assert.Equal(2, Lines(vectors).Count(l => l.Contains("constexpr auto replace() const -> vector_table")));
+            Assert.Equal(2, Lines(vectors).Count(l => l == "\tconstexpr void install()"));
+            Assert.Equal(2, Lines(vectors).Count(l => l == "\tconstexpr void reinstall()"));
+            Assert.Equal(4, Lines(vectors).Count(l => l.EndsWith(", false);", StringComparison.Ordinal)));
+            Assert.Equal(4, Lines(vectors).Count(l => l.EndsWith(", true);", StringComparison.Ordinal)));
+            Assert.DoesNotContain("opsy", vectors, StringComparison.OrdinalIgnoreCase);
         }
     }
 }

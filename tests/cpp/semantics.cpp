@@ -15,6 +15,7 @@
 
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 static_assert(!std::is_same_v<FIXTURE::ctl_p, TWIN::ctl_p>);
 static_assert(std::is_same_v<decltype(FIXTURE::ctl_p::cr), mmio::memory<uint32_t, FIXTURE::ctl_p::cr_r>>);
@@ -181,6 +182,149 @@ static_assert(std::string_view(FIXTURE::device_name) == "FIXTURE");
 static_assert(std::string_view(FIXTURE::cpu_name) == "CM33");
 static_assert(FIXTURE::nvic_priority_bits == 3);
 static_assert(FIXTURE::has_mpu && !FIXTURE::has_fpu);
+
+// ── Vector table ───────────────────────────────────────────────────────────
+#include <FIXTURE/vectors.hpp>
+
+void on_reset() {}
+void on_fault() {}
+void on_ctl() {}
+void on_dma() {}
+void on_svcall() {}
+void on_pendsv() {}
+void on_systick() {}
+inline std::uint32_t stack_top;
+
+constexpr auto vectors = vector_table<>(&stack_top, on_reset)
+	.with<exception::hard_fault, on_fault>()
+	.with<exception::secure_fault, on_fault>()
+	.with<CTL_IRQn, on_ctl>()
+	.with<DMA1_CH0_IRQn, on_dma>();
+
+// The table is what the core reads: stack pointer, exceptions 1 to 15, then the interrupts.
+static_assert(sizeof(vectors) == (16 + irq_count) * sizeof(void*));
+static_assert(std::is_standard_layout_v<vector_table<>>);
+static_assert(vectors.handler(1) == on_reset);
+static_assert(vectors.handler(3) == on_fault && vectors.handler(7) == on_fault);
+static_assert(vectors.handler(16 + 2) == on_ctl && vectors.handler(16 + 8) == on_dma);
+// What was given no handler is null.
+static_assert(vectors.handler(2) == nullptr && vectors.handler(16) == nullptr);
+// The fixture is a CM33: it has the exceptions of Armv8-M Mainline.
+static_assert(static_cast<int>(exception::secure_fault) == 7 && static_cast<int>(exception::systick) == 15);
+
+// A handler for the unhandled, a parameter of the table, fills what with<>() does not.
+void on_unhandled() {}
+
+constexpr auto guarded_vectors = vector_table<on_unhandled>(&stack_top, on_reset)
+	.with<exception::hard_fault, on_fault>()
+	.with<CTL_IRQn, on_ctl>();
+static_assert(guarded_vectors.handler(1) == on_reset);
+static_assert(guarded_vectors.handler(3) == on_fault && guarded_vectors.handler(16 + 2) == on_ctl);
+// System exceptions and device interrupts left alone, numbers no interrupt has included.
+static_assert(guarded_vectors.handler(2) == on_unhandled && guarded_vectors.handler(15) == on_unhandled);
+static_assert(guarded_vectors.handler(16 + 0) == on_unhandled && guarded_vectors.handler(16 + 8) == on_unhandled);
+// The slots the core reserves stay null (8, 9, 10 and 13 on a CM33).
+static_assert(guarded_vectors.handler(8) == nullptr && guarded_vectors.handler(9) == nullptr);
+static_assert(guarded_vectors.handler(10) == nullptr && guarded_vectors.handler(13) == nullptr);
+
+// A decoration wraps the handlers of the device interrupts, and only those.
+template<isr_handler_t Handler>
+void traced() { Handler(); }
+
+struct tracing
+{
+	template<isr_handler_t Handler>
+	static constexpr isr_handler_t wrap = traced<Handler>;
+};
+
+constexpr auto traced_vectors = vector_table<nullptr, tracing>(&stack_top, on_reset)
+	.with<exception::hard_fault, on_fault>()
+	.with<CTL_IRQn, on_ctl>();
+static_assert(traced_vectors.handler(16 + 2) == traced<on_ctl>);
+static_assert(traced_vectors.handler(3) == on_fault);
+// The handler for the unhandled is not decorated.
+static_assert(vector_table<on_unhandled, tracing>(&stack_top, on_reset).handler(16 + 5) == on_unhandled);
+
+// with<>() only fills a slot that has no handler yet; replace<>() says that
+// taking the place of another handler is meant.
+constexpr auto replaced_vectors = guarded_vectors
+	.replace<exception::hard_fault, on_systick>()
+	.replace<CTL_IRQn, on_dma>()
+	.replace<exception::nmi, on_fault>();   // nothing was there: replace does not require it
+static_assert(replaced_vectors.handler(3) == on_systick && replaced_vectors.handler(16 + 2) == on_dma);
+static_assert(replaced_vectors.handler(2) == on_fault);
+// The original table is a value: it is unchanged.
+static_assert(guarded_vectors.handler(3) == on_fault);
+// replace<>() goes through the decoration like with<>().
+static_assert(traced_vectors.replace<CTL_IRQn, on_dma>().handler(16 + 2) == traced<on_dma>);
+// In place, for a table in RAM: install<>() and reinstall<>() follow the same rule.
+constexpr auto in_place_vectors = []
+{
+	auto table = guarded_vectors;
+	table.install<exception::nmi, on_svcall>();
+	table.install<DMA1_CH0_IRQn, on_dma>();
+	table.reinstall<exception::hard_fault, on_systick>();
+	table.reinstall<CTL_IRQn, on_dma>();
+	return table;
+}();
+static_assert(in_place_vectors.handler(2) == on_svcall && in_place_vectors.handler(16 + 8) == on_dma);
+static_assert(in_place_vectors.handler(3) == on_systick && in_place_vectors.handler(16 + 2) == on_dma);
+
+// On a table in RAM the mistake cannot stop the build: the program says what
+// happens, by defining the function the generated header only declares.
+// It is given what was already taken, as the enumerator it is.
+[[noreturn]] void FIXTURE::handler_already_installed(IRQn_Type taken)
+{
+	static_cast<void>(taken); // a real program reports it: its assert, its fault handler
+	while (true) {}
+}
+
+[[noreturn]] void FIXTURE::handler_already_installed(exception taken)
+{
+	static_cast<void>(taken);
+	while (true) {}
+}
+
+void patch_at_run_time(vector_table<on_unhandled>& ram_vectors)
+{
+	ram_vectors.install<CTL_IRQn, on_ctl>();
+	ram_vectors.install<exception::svcall, on_svcall>();
+	ram_vectors.reinstall<CTL_IRQn, on_dma>();
+}
+
+// What the in-place functions return is nothing: a forgotten assignment cannot hide a change.
+static_assert(std::is_void_v<decltype(std::declval<vector_table<>&>().install<CTL_IRQn, on_ctl>())>);
+
+// Installing the handler for the unhandled itself leaves the slot free.
+static_assert(guarded_vectors.with<exception::nmi, on_unhandled>().with<exception::nmi, on_fault>().handler(2) == on_fault);
+
+// A library installs its own handlers without the generated code knowing it,
+// and without knowing the type of the table: it states what it expects of it.
+namespace kernel
+{
+template<typename Table>
+concept vector_table = requires(Table table)
+{
+	table.template with<Table::exception_type::svcall, on_svcall>();
+	table.template with<Table::exception_type::pendsv, on_pendsv>();
+	table.template with<Table::exception_type::systick, on_systick>();
+};
+
+inline constexpr auto scheduler_isrs = [](vector_table auto table)
+{
+	using e = typename decltype(table)::exception_type;
+	return table.template with<e::svcall, on_svcall>()
+	            .template with<e::pendsv, on_pendsv>()
+	            .template with<e::systick, on_systick>();
+};
+} // namespace kernel
+
+constexpr auto kernel_vectors = vector_table<nullptr, tracing>(&stack_top, on_reset)
+	.with(kernel::scheduler_isrs)
+	.with<CTL_IRQn, on_ctl>();
+static_assert(kernel_vectors.handler(11) == on_svcall && kernel_vectors.handler(14) == on_pendsv && kernel_vectors.handler(15) == on_systick);
+static_assert(kernel_vectors.handler(16 + 2) == traced<on_ctl>);
+static_assert(std::is_same_v<decltype(kernel_vectors), const vector_table<nullptr, tracing>>);
 
 // ── The statements a driver writes must compile ────────────────────────────
 template<typename TPort>

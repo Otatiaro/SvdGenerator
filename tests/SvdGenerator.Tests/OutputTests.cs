@@ -128,7 +128,7 @@ namespace SvdGenerator.Tests
             var (code, error) = Run(input, SimpleDevice(), output.Path);
 
             Assert.Equal((Program.ExitOk, ""), (code, error));
-            Assert.Equal(new[] { "CMakeLists.txt", "device.hpp", "device.ld", "interrupts.hpp", "memory.hpp", "mmio.hpp", "p.hpp" }, output.Names());
+            Assert.Equal(new[] { "CMakeLists.txt", "device.hpp", "device.ld", "interrupts.hpp", "memory.hpp", "mmio.hpp", "p.hpp", "vectors.hpp" }, output.Names());
             Assert.Equal("// opsy\n", File.ReadAllText(output.File("memory.hpp")));
         }
 
@@ -142,7 +142,7 @@ namespace SvdGenerator.Tests
 
             Run(input, SimpleDevice("NEW"), output.Path);
 
-            Assert.Equal(new[] { "device.hpp", "interrupts.hpp", "mmio.hpp", "new.hpp" }, output.Names());
+            Assert.Equal(new[] { "device.hpp", "interrupts.hpp", "mmio.hpp", "new.hpp", "vectors.hpp" }, output.Names());
         }
 
         [Fact]
@@ -158,7 +158,7 @@ namespace SvdGenerator.Tests
             var (code, _) = Run(input, SimpleDevice(), output.Path);
 
             Assert.Equal(Program.ExitOk, code);
-            Assert.Equal(new[] { "device.hpp", "interrupts.hpp", "mmio.hpp", "p.hpp" }, output.Names());
+            Assert.Equal(new[] { "device.hpp", "interrupts.hpp", "mmio.hpp", "p.hpp", "vectors.hpp" }, output.Names());
             Assert.StartsWith(Emitter.BannerStart, File.ReadAllText(output.File("p.hpp")), StringComparison.Ordinal);
         }
 
@@ -195,7 +195,7 @@ namespace SvdGenerator.Tests
             Assert.Equal(Program.ExitError, code);
             Assert.Contains("24 bits", error);
             Assert.DoesNotContain("   at ", error);
-            Assert.Equal(new[] { "device.hpp", "interrupts.hpp", "mmio.hpp", "p.hpp" }, output.Names());
+            Assert.Equal(new[] { "device.hpp", "interrupts.hpp", "mmio.hpp", "p.hpp", "vectors.hpp" }, output.Names());
             Assert.Equal(before, File.ReadAllText(output.File("p.hpp")));
         }
 
@@ -285,11 +285,12 @@ namespace SvdGenerator.Tests
         [InlineData("DEVICE", "device_2.hpp")]
         [InlineData("INTERRUPTS", "interrupts_2.hpp")]
         [InlineData("MMIO", "mmio_2.hpp")]
+        [InlineData("VECTORS", "vectors_2.hpp")]
         public void A_peripheral_does_not_take_the_name_of_another_header(string peripheral, string file)
         {
             var files = Generate(Device(Peripheral(peripheral, 0x1000, SimpleRegister())));
 
-            Assert.Equal(new[] { "device.hpp", file, "interrupts.hpp", "mmio.hpp" }.OrderBy(n => n, StringComparer.Ordinal), files.Keys);
+            Assert.Equal(new[] { "device.hpp", file, "interrupts.hpp", "mmio.hpp", "vectors.hpp" }.OrderBy(n => n, StringComparer.Ordinal), files.Keys);
         }
     }
 }
