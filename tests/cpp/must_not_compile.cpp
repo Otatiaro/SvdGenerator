@@ -12,49 +12,49 @@ using opsy::utility::atomic;
 void cases()
 {
 #ifdef CASE_FIELD_OF_ANOTHER_REGISTER // expect: no match for .operator\|=
-	ctl.ctl_cr |= ctl_p::ctl_sr_r::busy_f();
+	ctl.cr |= ctl_p::sr_r::busy_f();
 #endif
 #ifdef CASE_WRITE_ONLY_REGISTER_READ // expect: has no member named .load
-	(void)porta.porta_bsrr.load();
+	(void)porta.bsrr.load();
 #endif
 #ifdef CASE_READ_ONLY_REGISTER_WRITTEN // expect: no match for .operator=
-	dma1.dma_isr = dma_p::dma_isr_r(0);
+	dma1.isr = dma_p::isr_r(0);
 #endif
 #ifdef CASE_REGISTER_OF_READ_ONLY_FIELDS_WRITTEN // expect: no match for .operator=
-	ctl.ctl_sr = ctl_p::ctl_sr_r(0);
+	ctl.sr = ctl_p::sr_r(0);
 #endif
 #ifdef CASE_REGISTER_OF_WRITE_ONLY_FIELDS_READ // expect: has no member named .load
-	(void)ctl.ctl_icr.load();
+	(void)ctl.icr.load();
 #endif
 #ifdef CASE_READ_ONLY_FIELD_ASSIGNED // expect: no match for .operator=
-	ctl.ctl_cr = ctl_p::ctl_cr_r::rdy_f();
+	ctl.cr = ctl_p::cr_r::rdy_f();
 #endif
 #ifdef CASE_READ_ONLY_FIELD_SET // expect: no match for .operator\|=
-	ctl.ctl_cr |= ctl_p::ctl_cr_r::rdy_f();
+	ctl.cr |= ctl_p::cr_r::rdy_f();
 #endif
 #ifdef CASE_READ_ONLY_FIELD_COMBINED // expect: use of deleted function .*operator\|
-	ctl.ctl_cr = ctl_p::ctl_cr_r::en_f() | ctl_p::ctl_cr_r::rdy_f();
+	ctl.cr = ctl_p::cr_r::en_f() | ctl_p::cr_r::rdy_f();
 #endif
 #ifdef CASE_READ_ONLY_FIELD_COMBINED_FIRST // expect: use of deleted function .*operator\|
-	ctl.ctl_cr = ctl_p::ctl_cr_r::rdy_f() | ctl_p::ctl_cr_r::en_f();
+	ctl.cr = ctl_p::cr_r::rdy_f() | ctl_p::cr_r::en_f();
 #endif
 #ifdef CASE_FIELDS_OF_TWO_REGISTERS_COMBINED // expect: use of deleted function .*operator\|
-	ctl.ctl_cr = ctl_p::ctl_cr_r::en_f() | ctl_p::ctl_icr_r::cbusy_f();
+	ctl.cr = ctl_p::cr_r::en_f() | ctl_p::icr_r::cbusy_f();
 #endif
 #ifdef CASE_READ_ONLY_FIELD_CLEAR_SET // expect: no match for .operator<<=
-	ctl.ctl_cr <<= ctl_p::ctl_cr_r::rdy_f(false);
+	ctl.cr <<= ctl_p::cr_r::rdy_f(false);
 #endif
 #ifdef CASE_CONSTANT_OUT_OF_RANGE // expect: this constant does not fit the register field
-	ctl.ctl_cr = ctl_p::ctl_cr_r::mode_f(8);
+	ctl.cr = ctl_p::cr_r::mode_f(8);
 #endif
 #ifdef CASE_CONSTANT_OUT_OF_RANGE_WIDE_FIELD // expect: this constant does not fit the register field
-	ctl.ctl_cr <<= ctl_p::ctl_cr_r::div_f(600) || atomic;
+	ctl.cr <<= ctl_p::cr_r::div_f(600) || atomic;
 #endif
 #ifdef CASE_CONSTANT_OUT_OF_RANGE_IN_A_CONSTANT_EXPRESSION // expect: field_value_out_of_range
-	constexpr ctl_p::ctl_cr_r value = ctl_p::ctl_cr_r::mode_f(8);
+	constexpr ctl_p::cr_r value = ctl_p::cr_r::mode_f(8);
 	(void)value;
 #endif
 #ifdef CASE_SINGLE_BAR_BETWEEN_FIELDS_OF_AN_ATOMIC_CLEAR_SET // expect: use of deleted function .*operator\|\|
-	ctl.ctl_cr <<= (ctl_p::ctl_cr_r::mode_f(1) | ctl_p::ctl_cr_r::div_f(2)) || atomic;
+	ctl.cr <<= (ctl_p::cr_r::mode_f(1) | ctl_p::cr_r::div_f(2)) || atomic;
 #endif
 }

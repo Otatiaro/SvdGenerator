@@ -77,33 +77,32 @@ namespace SvdGenerator.Tests
         }
 
         [Fact]
-        public void A_cluster_contributes_its_registers()
+        public void A_cluster_is_a_nested_class()
         {
             var header = GenerateOne(Peripheral("P", 0x1000,
                 SimpleRegister() + Cluster("CL", 0x10, Register("X", 0, Field("A", 0, 2)) + Register("Y", 4, Field("B", 0, 3)))));
 
-            Assert.Equal(new[]
-            {
-                "opsy::utility::memory<uint32_t,r_r> r;",
-                "opsy::utility::padding<12> _p4;",
-                "opsy::utility::memory<uint32_t,cl_x_r> cl_x;",
-                "opsy::utility::memory<uint32_t,cl_y_r> cl_y;",
-            }, Members(header));
-            Assert.Contains("static_assert(offsetof(p_p, cl_y) == 20);", header);
+            Assert.Contains("class cl_c {", header);
+            Assert.Contains("\tcl_c cl;\n", header);
+            Assert.Contains("static_assert(offsetof(p_p, cl) == 16);", header);
+            Assert.Contains("static_assert(offsetof(p_p::cl_c, y) == 4);", header);
+            Assert.Contains("opsy::utility::memory<uint32_t,y_r> y;", header);
         }
 
         [Fact]
-        public void A_cluster_array_contributes_one_set_of_registers_per_index()
+        public void A_cluster_array_is_an_array_of_its_class()
         {
             var header = GenerateOne(Peripheral("P", 0x1000,
                 Cluster("CH[%s]", 0x20, SimpleRegister("X"), extra: "<dim>2</dim><dimIncrement>8</dimIncrement>")));
 
-            Assert.Contains("static_assert(offsetof(p_p, ch0_x) == 32);", header);
-            Assert.Contains("static_assert(offsetof(p_p, ch1_x) == 40);", header);
+            Assert.Contains("\tch_c ch[2];\n", header);
+            Assert.Contains("static_assert(offsetof(p_p, ch) == 32);", header);
+            Assert.Contains("static_assert(sizeof(p_p::ch_c) == 8);", header);
+            Assert.Contains("\topsy::utility::padding<4> _p4;\n", header);
         }
 
         [Fact]
-        public void A_register_array_expands_with_both_name_forms()
+        public void A_register_array_is_a_list_or_an_array_depending_on_its_name_form()
         {
             var header = GenerateOne(Peripheral("P", 0x1000,
                 Register("A%s", 0, Field("F", 0, 1), extra: "<dim>2</dim><dimIncrement>4</dimIncrement><dimIndex>X,Y</dimIndex>") +
@@ -111,16 +110,17 @@ namespace SvdGenerator.Tests
 
             Assert.Contains("static_assert(offsetof(p_p, ax) == 0);", header);
             Assert.Contains("static_assert(offsetof(p_p, ay) == 4);", header);
-            Assert.Contains("static_assert(offsetof(p_p, b1) == 12);", header);
+            Assert.Contains("opsy::utility::memory<uint32_t,b_r> b[2];", header);
+            Assert.Contains("static_assert(offsetof(p_p, b) == 8);", header);
         }
 
         [Fact]
         public void A_peripheral_array_gives_one_instance_per_index()
         {
-            var header = Generate(Device(Peripheral("P%s", 0x1000, SimpleRegister(), extra: "<dim>2</dim><dimIncrement>0x400</dimIncrement>")))["p0.hpp"];
+            var header = Generate(Device(Peripheral("P%s", 0x1000, SimpleRegister(), extra: "<dim>2</dim><dimIncrement>0x400</dimIncrement>")))["p.hpp"];
 
-            Assert.Contains("inline p0_p& p0 = *reinterpret_cast<p0_p*>(0x1000);", header);
-            Assert.Contains("inline p0_p& p1 = *reinterpret_cast<p0_p*>(0x1400);", header);
+            Assert.Contains("inline p_p& p0 = *reinterpret_cast<p_p*>(0x1000);", header);
+            Assert.Contains("inline p_p& p1 = *reinterpret_cast<p_p*>(0x1400);", header);
         }
 
         [Fact]
