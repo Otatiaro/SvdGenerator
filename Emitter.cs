@@ -132,11 +132,20 @@ namespace SvdGenerator
                 $"// Source: {device.SourceFile} (device {device.Name}{version})",
                 $"// SHA-256: {device.SourceSha256}");
 
+            // The notice of the SVD is an attribution, not a statement of who owns
+            // the file: it covers what the file takes from the SVD, descriptions
+            // above all, which are its author's words copied as they are. The
+            // code around them is the generator's output, left free of any
+            // license of the generator.
             if (device.Notice.Count > 0)
             {
-                AppendLines(sb, "//", "// Notice carried by the source file:", "//");
+                AppendLines(sb, "//",
+                    "// What this file takes from the source file (names, addresses, descriptions)",
+                    "// remains under the notice that file carries:",
+                    "//");
                 foreach (var line in device.Notice)
                     AppendLines(sb, line.Length == 0 ? "//" : $"//   {line}");
+                AppendLines(sb, "//", "// SvdGenerator puts no license of its own on the code it generates around it.");
             }
 
             AppendLines(sb, "");
@@ -248,15 +257,31 @@ namespace SvdGenerator
                 AppendLines(sb, $"| Core | {Cell(cpu.Name)}{(traits.Count > 0 ? ", " + string.Join(", ", traits) : string.Empty)} |");
             }
 
+            // Three things of three origins, said apart: what comes from the SVD,
+            // what the generator wrote, and the one file that is the generator's own.
+            AppendLines(sb, "", "## Whose is what", "");
             if (device.Notice.Count > 0)
             {
-                AppendLines(sb, "", "## Notice carried by the source file", "",
-                    "The headers derive from the source file and carry its notice:", "");
+                AppendLines(sb,
+                    "- **What the headers take from the source file**, names, addresses and descriptions,",
+                    "  remains under the notice that file carries:",
+                    "");
                 foreach (var line in device.Notice)
-                    AppendLines(sb, line.Length == 0 ? ">" : $"> {line}  ");
+                    AppendLines(sb, line.Length == 0 ? "  >" : $"  > {line}  ");
+                AppendLines(sb, "");
             }
-
-            AppendLines(sb, "",
+            else
+            {
+                AppendLines(sb,
+                    "- **What the headers take from the source file**, names, addresses and descriptions,",
+                    "  remains under the terms of that file, which carries no notice.");
+            }
+            AppendLines(sb,
+                "- **The code generated around it** carries no license of SvdGenerator: the generator puts",
+                "  none of its own on what it generates.",
+                $"- **`{RegistersFile}`** is not generated from the source file: it is part of SvdGenerator, under",
+                "  the MIT license written in its header.",
+                "",
                 "## Finding a register",
                 "",
                 "A peripheral header can be thousands of lines long: do not read one from the top. Each",
@@ -279,9 +304,6 @@ namespace SvdGenerator
                 AppendLines(sb, $"| [`{VectorsFile}`]({VectorsFile}) | `vector_table`, the vector table built at compile time, and the `exception` enumeration of the core |");
             AppendLines(sb,
                 $"| [`{RegistersFile}`]({RegistersFile}) | The register building blocks every peripheral header includes (namespace `mmio`); the same for every device |",
-                "",
-                $"`{RegistersFile}` does not derive from the source file: it is part of SvdGenerator and carries",
-                "its own license, MIT, in its header.",
                 "",
                 "## Peripherals",
                 "",
