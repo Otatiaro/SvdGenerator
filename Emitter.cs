@@ -19,6 +19,7 @@ namespace SvdGenerator
 
         const string InterruptsFile = "interrupts.hpp";
         const string DeviceFile = "device.hpp";
+        const string VectorsFile = "vectors.hpp";
 
         /// <summary>The header of the register building blocks, written next to the others.</summary>
         public const string RegistersFile = "mmio.hpp";
@@ -32,6 +33,8 @@ namespace SvdGenerator
             files[InterruptsFile] = Normalize(new StringBuilder(banner).Append(Interrupts(device, ns)));
             files[DeviceFile] = Normalize(new StringBuilder(banner).Append(DeviceDescription(device, ns)));
             files[RegistersFile] = Normalize(new StringBuilder(RegistersBanner(generatorVersion)).Append(Registers()));
+            if (Vectors(device, ns) is { } vectors)
+                files[VectorsFile] = Normalize(new StringBuilder(banner).Append(vectors));
 
             // One header per group of peripherals: the SVD's groupName, or what
             // the names of the peripherals have in common (see Structure).
@@ -65,7 +68,7 @@ namespace SvdGenerator
         static string PeripheralFile(string key)
         {
             var file = FileName(key);
-            return file is InterruptsFile or DeviceFile or RegistersFile ? FileName(key + "_2") : file;
+            return file is InterruptsFile or DeviceFile or RegistersFile or VectorsFile ? FileName(key + "_2") : file;
         }
 
         // The register building blocks (namespace mmio) are a C++ file of this
@@ -171,6 +174,233 @@ namespace SvdGenerator
             }
 
             AppendLines(sb, "", $"}} // {ns}");
+            return sb.ToString();
+        }
+
+        // ── Vector table ───────────────────────────────────────────────────
+
+        /// <summary>
+        /// The system exceptions a core has besides reset, with their exception
+        /// number; null for a core that has no Cortex-M vector table.
+        /// </summary>
+        static (string Name, int Number)[]? SystemExceptions(Cpu? cpu)
+        {
+            var baseline = new[] { ("nmi", 2), ("hard_fault", 3), ("svcall", 11), ("pendsv", 14), ("systick", 15) };
+            var mainline = new[] { ("mem_manage", 4), ("bus_fault", 5), ("usage_fault", 6), ("debug_monitor", 12) };
+            var secure = new[] { ("secure_fault", 7) };
+
+            (string, int)[] Sorted(params (string Name, int Number)[][] sets) =>
+                sets.SelectMany(s => s).OrderBy(e => e.Number).ToArray();
+
+            switch (cpu?.Name)
+            {
+                // Armv6-M and Armv8-M Baseline.
+                case "CM0" or "CM0PLUS" or "CM0+" or "CM1" or "SC000" or "CM23" or "ARMV8MBL":
+                    return Sorted(baseline);
+                // Armv7-M.
+                case "CM3" or "SC300" or "CM4" or "CM7":
+                    return Sorted(baseline, mainline);
+                // Cortex-A: another exception model altogether.
+                case { } name when name.StartsWith("CA", StringComparison.Ordinal):
+                    return null;
+                // Armv8-M Mainline, and what the SVD does not tell: every slot
+                // any Cortex-M has, so that nothing a core offers is refused.
+                default:
+                    return Sorted(baseline, mainline, secure);
+            }
+        }
+
+        static string? Vectors(Device device, string ns)
+        {
+            var exceptions = SystemExceptions(device.Cpu);
+            if (exceptions == null)
+                return null;
+
+            var core = device.Cpu == null ? "the SVD names no core: every Cortex-M system exception" : device.Cpu.Name;
+            var width = exceptions.Max(e => e.Name.Length);
+
+            var sb = new StringBuilder();
+            AppendLines(sb, "#pragma once", "", "#include <array>", "#include <cstddef>", "#include <cstdint>", "", $"#include \"{InterruptsFile}\"", "",
+                $"namespace {ns}", "{", "",
+                "/** A handler of the vector table. */",
+                "using isr_handler_t = void (*)();", "",
+                $"/** System exceptions of the core ({core}); the enumerators are their exception numbers. */",
+                "enum class exception : std::uint8_t", "{");
+            foreach (var (name, number) in exceptions)
+                AppendLines(sb, $"\t{name.PadRight(width)} = {number},");
+            AppendLines(sb, "};", "",
+                "/** Decoration of a vector_table that installs the handlers of the device interrupts as they are. */",
+                "struct undecorated",
+                "{",
+                "\ttemplate<isr_handler_t Handler>",
+                "\tstatic constexpr isr_handler_t wrap = Handler;",
+                "};", "",
+                "/**",
+                " * Called when with<>() or install<>() is given a slot that already has a",
+                " * handler; replace<>() and reinstall<>() are how to mean it.",
+                " *",
+                " * It is not constexpr, so on a table built at compile time the build stops",
+                " * there and nothing has to be defined. It is only declared here: a program",
+                " * that calls install<>() on a table in RAM defines it, to report the mistake",
+                " * its own way (its assert, its fault handler). It must not return.",
+                " *",
+                " * One overload for a system exception, one for a device interrupt: each is",
+                " * given the slot that was already taken.",
+                " */",
+                "[[noreturn]] void handler_already_installed(exception taken);",
+                "[[noreturn]] void handler_already_installed(IRQn_Type taken);", "",
+                "/**",
+                " * The vector table of the device, built at compile time: the initial stack",
+                " * pointer, the reset handler, the system exceptions of the core, then one",
+                " * slot per device interrupt.",
+                " *",
+                " * @code",
+                " * [[gnu::section(\".isr_vector\"), gnu::used]]",
+                " * constexpr auto g_vectors = vector_table<Default_Handler>(&_estack, Reset_Handler)",
+                " *     .with<exception::hard_fault, Fault_Handler>()",
+                " *     .with<USART3_IRQn, uart_isr>();",
+                " * @endcode",
+                " *",
+                " * @tparam Unhandled  the handler of every system exception and device interrupt",
+                " *         that is given none; null by default. It is installed as it is, without",
+                " *         the decoration. The slots the core reserves are always null.",
+                " * @tparam Decoration what a device interrupt handler is wrapped in. A type with",
+                " *         a member `template<isr_handler_t> static constexpr isr_handler_t wrap`,",
+                " *         for a kernel or a tracer that wants to run code around every handler.",
+                " *         System exceptions are never decorated.",
+                " */",
+                "template<isr_handler_t Unhandled = nullptr, typename Decoration = undecorated>",
+                "class vector_table",
+                "{",
+                "public:",
+                "",
+                "\t/** The enumerations this table is indexed by, for generic code that only has its type. */",
+                "\tusing exception_type = exception;",
+                "\tusing irq_type = IRQn_Type;",
+                "",
+                "\t/**",
+                "\t * @param end_of_stack what the core loads in the main stack pointer at reset",
+                "\t * @param reset        the reset handler",
+                "\t */",
+                "\tconstexpr vector_table(std::uint32_t* end_of_stack, isr_handler_t reset) : end_of_stack_(end_of_stack)",
+                "\t{",
+                "\t\thandlers_.fill(Unhandled);");
+            foreach (var number in Enumerable.Range(2, 14).Where(n => exceptions.All(e => e.Number != n)))
+                AppendLines(sb, $"\t\thandlers_[{number - 1}] = nullptr; // exception {number}: reserved");
+            AppendLines(sb,
+                "\t\thandlers_[0] = reset;",
+                "\t}",
+                "",
+                "\t/**",
+                "\t * This table with the handler of a system exception, which must not have one",
+                "\t * yet: installing over another handler is handler_already_installed().",
+                "\t */",
+                "\ttemplate<exception Exception, isr_handler_t Handler>",
+                "\t[[nodiscard]] constexpr auto with() const -> vector_table",
+                "\t{",
+                "\t\treturn installed(Exception, Handler, false);",
+                "\t}",
+                "",
+                "\t/**",
+                "\t * This table with the handler of a device interrupt, wrapped by the decoration.",
+                "\t * The interrupt must not have a handler yet.",
+                "\t */",
+                "\ttemplate<IRQn_Type Irq, isr_handler_t Handler>",
+                "\t[[nodiscard]] constexpr auto with() const -> vector_table",
+                "\t{",
+                "\t\treturn installed(Irq, Decoration::template wrap<Handler>, false);",
+                "\t}",
+                "",
+                "\t/** This table with the handler of a system exception, whatever handler it had. */",
+                "\ttemplate<exception Exception, isr_handler_t Handler>",
+                "\t[[nodiscard]] constexpr auto replace() const -> vector_table",
+                "\t{",
+                "\t\treturn installed(Exception, Handler, true);",
+                "\t}",
+                "",
+                "\t/** This table with the handler of a device interrupt, wrapped by the decoration, whatever handler it had. */",
+                "\ttemplate<IRQn_Type Irq, isr_handler_t Handler>",
+                "\t[[nodiscard]] constexpr auto replace() const -> vector_table",
+                "\t{",
+                "\t\treturn installed(Irq, Decoration::template wrap<Handler>, true);",
+                "\t}",
+                "",
+                "\t/**",
+                "\t * In place, for a table that lives in RAM: installs the handler of a system",
+                "\t * exception, which must not have one yet. One store, no copy of the table.",
+                "\t */",
+                "\ttemplate<exception Exception, isr_handler_t Handler>",
+                "\tconstexpr void install()",
+                "\t{",
+                "\t\tput(Exception, Handler, false);",
+                "\t}",
+                "",
+                "\t/** In place: installs the handler of a device interrupt, which must not have one yet. */",
+                "\ttemplate<IRQn_Type Irq, isr_handler_t Handler>",
+                "\tconstexpr void install()",
+                "\t{",
+                "\t\tput(Irq, Decoration::template wrap<Handler>, false);",
+                "\t}",
+                "",
+                "\t/** In place: installs the handler of a system exception, whatever handler it had. */",
+                "\ttemplate<exception Exception, isr_handler_t Handler>",
+                "\tconstexpr void reinstall()",
+                "\t{",
+                "\t\tput(Exception, Handler, true);",
+                "\t}",
+                "",
+                "\t/** In place: installs the handler of a device interrupt, whatever handler it had. */",
+                "\ttemplate<IRQn_Type Irq, isr_handler_t Handler>",
+                "\tconstexpr void reinstall()",
+                "\t{",
+                "\t\tput(Irq, Decoration::template wrap<Handler>, true);",
+                "\t}",
+                "",
+                "\t/**",
+                "\t * This table with what a library installs in it: with(install) is install(*this).",
+                "\t * Lets a kernel place its own handlers without the generated code knowing it.",
+                "\t */",
+                "\t[[nodiscard]] constexpr auto with(auto&& install) const",
+                "\t{",
+                "\t\treturn install(*this);",
+                "\t}",
+                "",
+                "\t/** The handler at an exception number: 1 is reset, 16 the first device interrupt. */",
+                "\t[[nodiscard]] constexpr auto handler(std::size_t exception_number) const -> isr_handler_t",
+                "\t{",
+                "\t\treturn handlers_[exception_number - 1];",
+                "\t}",
+                "",
+                "\t/** Entries before the first device interrupt: the stack pointer and exceptions 1 to 15. */",
+                "\tstatic constexpr std::size_t system_exceptions = 16;",
+                "",
+                "private:",
+                "",
+                "\t// Where the handler of an exception or of an interrupt is in handlers_.",
+                "\tstatic constexpr auto index_of(exception slot) -> std::size_t { return static_cast<std::size_t>(slot) - 1; }",
+                "\tstatic constexpr auto index_of(IRQn_Type slot) -> std::size_t { return system_exceptions - 1 + slot; }",
+                "",
+                "\tconstexpr void put(auto slot, isr_handler_t installing, bool replacing)",
+                "\t{",
+                "\t\tif (!replacing && handlers_[index_of(slot)] != Unhandled)",
+                "\t\t\thandler_already_installed(slot);",
+                "\t\thandlers_[index_of(slot)] = installing;",
+                "\t}",
+                "",
+                "\tconstexpr auto installed(auto slot, isr_handler_t installing, bool replacing) const -> vector_table",
+                "\t{",
+                "\t\tauto table = *this;",
+                "\t\ttable.put(slot, installing, replacing);",
+                "\t\treturn table;",
+                "\t}",
+                "",
+                "\tstd::uint32_t* end_of_stack_;",
+                "\tstd::array<isr_handler_t, system_exceptions - 1 + irq_count> handlers_{};",
+                "};",
+                "",
+                "static_assert(sizeof(vector_table<>) == (vector_table<>::system_exceptions + irq_count) * sizeof(void*));",
+                "",
+                $"}} // {ns}");
             return sb.ToString();
         }
 

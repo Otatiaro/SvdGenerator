@@ -70,6 +70,7 @@ Reads the SVD file and writes into `<output_dir>`:
 - one `.hpp` per group of peripherals (`gpio.hpp`, `tim.hpp`, ...);
 - `interrupts.hpp`, the interrupt numbers;
 - `device.hpp`, the name of the device and what the SVD says of its core;
+- `vectors.hpp`, the vector table of the device, built at compile time;
 - `mmio.hpp`, the register building blocks, the same for every
   device. Two devices generated in two directories can be included in one
   translation unit.
@@ -242,6 +243,91 @@ std::uint16_t` (`USART3_IRQn`, ...), in the device namespace.
 `device.hpp` holds `device_name`, `device_version` and, when the SVD has
 a `<cpu>`, `cpu_name`, `cpu_revision`, `nvic_priority_bits`, `has_mpu`
 and `has_fpu`.
+
+### Vector table
+
+`vectors.hpp` builds the vector table as a constant: the initial stack
+pointer, the reset handler, the system exceptions, one slot per device
+interrupt. Nothing is copied or patched at run time.
+
+```cpp
+#include <STM32H563/vectors.hpp>
+
+using namespace STM32H563;
+
+[[gnu::section(".isr_vector"), gnu::used]]
+constexpr auto g_vectors = vector_table<Default_Handler>(&_estack, Reset_Handler)
+    .with<exception::hard_fault, Fault_Handler>()
+    .with<USART3_IRQn, uart::rx_isr>()
+    .with<GPDMA1_CH0_IRQn, uart::tx_isr>();
+```
+
+- **`vector_table<Default_Handler>` names the handler for the
+  unhandled**: every system exception and device interrupt that is given
+  no handler gets it. `vector_table<>` leaves those slots null. The slots
+  the core reserves are null either way, and it is installed as it is,
+  without the decoration below.
+- **`with<>` only fills a slot that has no handler yet.** Giving a
+  handler to an exception or an interrupt that already has one is a
+  compile error (`handler_already_installed`), whoever installed the
+  first: you, or a library through `with(install)`. `replace<>` is how
+  to mean it:
+
+  ```cpp
+  constexpr auto g_test_vectors = g_vectors.replace<USART3_IRQn, uart::loopback_isr>();
+  ```
+
+- **`install<>` and `reinstall<>` do the same in place**, for a table
+  copied to RAM and pointed to by VTOR: one store, no copy of the table.
+
+  ```cpp
+  ram_vectors.reinstall<USART3_IRQn, uart::loopback_isr>();
+  ```
+
+  At run time `install<>` on a slot that already has a handler cannot
+  stop the build, so it calls `handler_already_installed`, which the
+  generated header declares and your program defines, to report the
+  mistake its own way. It is given what was already taken, as the
+  enumerator it is, and must not return. There is one overload for the
+  device interrupts and one for the system exceptions:
+
+  ```cpp
+  [[noreturn]] void STM32H563::handler_already_installed(IRQn_Type taken)
+  {
+      fatal("interrupt %u already has a handler", static_cast<unsigned>(taken));
+  }
+
+  [[noreturn]] void STM32H563::handler_already_installed(exception taken);
+  ```
+
+  A program defines the ones it can reach: none when it only builds
+  constant tables or only uses `reinstall<>`, the first when it installs
+  interrupts at run time. The check does not depend on `NDEBUG`.
+- **`exception` holds the system exceptions of the core** the SVD names:
+  five on a Cortex-M0+, nine on a Cortex-M4, ten with `secure_fault` on a
+  Cortex-M33. An exception the core does not have does not compile.
+- **`with<>` only takes this device's enumerators**: not a bare number,
+  not the interrupt of another device.
+- **`with(install)` is `install(*this)`.** A kernel places its own
+  handlers that way, without the generated code knowing the kernel and
+  without the kernel knowing the type of the table: it states what it
+  expects with a concept. `vector_table::exception_type` and `irq_type`
+  give generic code the enumerations.
+
+  ```cpp
+  constexpr auto g_vectors = vector_table<>(&_estack, Reset_Handler)
+      .with(kernel::scheduler_isrs)        // svcall, pendsv, systick
+      .with<USART3_IRQn, uart::rx_isr>();
+  ```
+
+- **`vector_table<Default_Handler, Decoration>` wraps the handlers of
+  the device interrupts**, for a kernel or a tracer that runs code around
+  each of them. `Decoration` is a type with a member
+  `template<isr_handler_t> static constexpr isr_handler_t wrap`; system
+  exceptions are never decorated.
+
+A device whose SVD names a Cortex-A core gets no `vectors.hpp`; one whose
+SVD names no core gets every Cortex-M system exception.
 
 ## What the generated code refuses
 

@@ -5,6 +5,8 @@
 #include <FIXTURE/ctl.hpp>
 #include <FIXTURE/dma.hpp>
 #include <FIXTURE/port.hpp>
+#include <FIXTURE/vectors.hpp>
+#include <TWIN/interrupts.hpp>
 
 using namespace FIXTURE;
 using mmio::atomic;
@@ -58,6 +60,50 @@ void cases()
 	ctl.cr <<= (ctl_p::cr_r::mode_f(1) | ctl_p::cr_r::div_f(2)) || atomic;
 #endif
 }
+
+// The vector table only takes the exceptions and the interrupts of its device.
+void on_interrupt() {}
+inline std::uint32_t stack_top;
+#ifdef CASE_VECTOR_GIVEN_A_BARE_NUMBER // expect: no matching function for call to .*with<3, on_interrupt>
+constexpr auto by_number = vector_table<>(&stack_top, on_interrupt).with<3, on_interrupt>();
+#endif
+#ifdef CASE_VECTOR_GIVEN_THE_INTERRUPT_OF_ANOTHER_DEVICE // expect: no matching function for call to .*with<
+constexpr auto of_twin = vector_table<>(&stack_top, on_interrupt).with<TWIN::CTL_IRQn, on_interrupt>();
+#endif
+#ifdef CASE_VECTOR_EXCEPTION_INSTALLED_TWICE // expect: handler_already_installed
+constexpr auto twice = vector_table<>(&stack_top, on_interrupt)
+	.with<exception::hard_fault, on_interrupt>()
+	.with<exception::hard_fault, on_interrupt>();
+#endif
+#ifdef CASE_VECTOR_INTERRUPT_INSTALLED_TWICE // expect: handler_already_installed
+void on_default() {}
+constexpr auto twice = vector_table<on_default>(&stack_top, on_interrupt)
+	.with<CTL_IRQn, on_interrupt>()
+	.with<CTL_IRQn, on_default>();
+#endif
+#ifdef CASE_VECTOR_INSTALLED_IN_PLACE_TWICE // expect: handler_already_installed
+constexpr auto twice = []
+{
+	auto table = vector_table<>(&stack_top, on_interrupt);
+	table.install<CTL_IRQn, on_interrupt>();
+	table.install<CTL_IRQn, on_interrupt>();
+	return table;
+}();
+#endif
+#ifdef CASE_VECTOR_INSTALLED_IN_PLACE_IN_A_CONSTANT_TABLE // expect: discards qualifiers|no matching function
+constexpr auto constant = vector_table<>(&stack_top, on_interrupt);
+void change() { constant.reinstall<CTL_IRQn, on_interrupt>(); }
+#endif
+#ifdef CASE_VECTOR_INSTALLER_OVER_A_HANDLER_OF_THE_USER // expect: handler_already_installed
+constexpr auto clash = vector_table<>(&stack_top, on_interrupt)
+	.with<exception::svcall, on_interrupt>()
+	.with([](auto table) { return table.template with<exception::svcall, on_interrupt>(); });
+#endif
+#ifdef CASE_VECTOR_INSTALLER_EXPECTING_AN_EXCEPTION_THE_TABLE_LACKS // expect: constraints not satisfied|no match
+template<typename Table>
+concept has_tick64 = requires(Table table) { table.template with<Table::exception_type::tick64, on_interrupt>(); };
+constexpr auto lacking = vector_table<>(&stack_top, on_interrupt).with([](has_tick64 auto table) { return table; });
+#endif
 
 // A register must be accessed in one instruction: a width the core cannot load
 // and store atomically is refused. Depends on the target, hence ARM only.
