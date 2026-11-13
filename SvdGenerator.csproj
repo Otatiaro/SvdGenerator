@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <AssemblyTitle>SvdGenerator</AssemblyTitle>
     <Product>SvdGenerator</Product>
@@ -15,7 +15,18 @@
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest</AnalysisLevel>
     <ImplicitUsings>disable</ImplicitUsings>
+    <!-- dotnet tool: `dotnet tool install SvdGenerator` gives the `svdgenerator` command. -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>svdgenerator</ToolCommandName>
+    <PackageId>SvdGenerator</PackageId>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/Otatiaro/SvdGenerator</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Otatiaro/SvdGenerator</RepositoryUrl>
+    <PackageTags>cmsis-svd;svd;cortex-m;embedded;cpp;code-generator</PackageTags>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
   <ItemGroup>
     <!-- The test project lives under tests/ and has its own .csproj. -->
     <Compile Remove="tests/**" />
@@ -32,10 +43,5 @@
   </ItemGroup>
   <ItemGroup>
     <Service Include="{508349B6-6B84-4DF5-91F0-309BEEBAD82D}" />
-  </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
-    <PackageReference Include="System.CodeDom" Version="10.0.7" />
-    <PackageReference Include="System.Data.DataSetExtensions" Version="4.5.0" />
   </ItemGroup>
 </Project>
