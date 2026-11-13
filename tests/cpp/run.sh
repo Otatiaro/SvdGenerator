@@ -8,14 +8,11 @@
 # environment:
 #   CXX         compiler (default g++)
 #   CXXFLAGS    extra flags, e.g. -mcpu=cortex-m33 for arm-none-eabi-g++
-#   MEMORY_HPP  path to opsy's utility/memory.hpp; downloaded at OPSY_REF when unset
-#   OPSY_REF    opsy commit to download memory.hpp from
 #   BUILD_DIR   where to generate (default: build/ next to this script)
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 : "${CXX:=g++}"
-: "${OPSY_REF:=9df189a2dc78ff306d8982fc025e164371c5d3fc}"
 build=${BUILD_DIR:-$here/build}
 
 # dotnet and a Windows compiler want Windows paths when run from Git Bash.
@@ -30,15 +27,16 @@ rm -rf "$build"
 mkdir -p "$build/FIXTURE"
 "${generator[@]}" "$(native "$here/fixture.svd")" "$(native "$build/FIXTURE")"
 
-if [ -n "${MEMORY_HPP:-}" ]; then
-  cp "$MEMORY_HPP" "$build/FIXTURE/memory.hpp"
-else
-  curl -fsSL "https://raw.githubusercontent.com/Otatiaro/OpSy/${OPSY_REF}/utility/memory.hpp" -o "$build/FIXTURE/memory.hpp"
-fi
+# A second device next to the first: two devices must compile in one
+# translation unit, each with its own copy of mmio.hpp.
+mkdir -p "$build/TWIN"
+sed 's#<name>FIXTURE</name>#<name>TWIN</name>#' "$here/fixture.svd" > "$build/twin.svd"
+"${generator[@]}" "$(native "$build/twin.svd")" "$(native "$build/TWIN")"
 
-# The generator must leave the memory.hpp alone and find nothing to change.
+# The generator must leave a file it did not write alone and find nothing to change.
+echo "// not generated" > "$build/FIXTURE/board.hpp"
 "${generator[@]}" "$(native "$here/fixture.svd")" "$(native "$build/FIXTURE")" --check
-test -f "$build/FIXTURE/memory.hpp"
+test -f "$build/FIXTURE/board.hpp"
 
 # Compiled for real, with the optimiser on: the check on constant field values
 # is raised when code is generated, which -fsyntax-only never reaches.
@@ -54,10 +52,18 @@ echo "semantics.cpp"
 echo "must_not_compile.cpp, no case selected"
 "$CXX" "${flags[@]}" "$(native "$here/must_not_compile.cpp")" || fail=1
 
+# Cases named CASE_ARM_x depend on the target: they only run with a compiler for ARM.
+arm=0
+if "$CXX" ${CXXFLAGS:-} -dM -E -x c++ - </dev/null 2>/dev/null | grep -q '__arm__'; then arm=1; fi
+
 while IFS= read -r line; do
   case=${line#\#ifdef }
   case=${case%% *}
   expect=${line#*// expect: }
+  if [ "$arm" = 0 ] && [[ "$case" == CASE_ARM_* ]]; then
+    echo "skip $case (not an ARM compiler)"
+    continue
+  fi
   if "$CXX" "${flags[@]}" "-D$case" "$(native "$here/must_not_compile.cpp")" 2>"$build/$case.log"; then
     echo "FAIL $case: compiled, it must not"
     fail=1

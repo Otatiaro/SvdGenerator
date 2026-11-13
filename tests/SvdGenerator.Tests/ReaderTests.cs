@@ -57,7 +57,7 @@ namespace SvdGenerator.Tests
                 Register("R0", 0, Field("F", 0, 1), size: null) + Register("R1", 1, Field("G", 0, 1), size: null),
                 extra: "<size>8</size>"));
 
-            Assert.Equal(new[] { "opsy::utility::memory<uint8_t,r0_r> r0;", "opsy::utility::memory<uint8_t,r1_r> r1;" }, Members(header));
+            Assert.Equal(new[] { "mmio::memory<uint8_t,r0_r> r0;", "mmio::memory<uint8_t,r1_r> r1;" }, Members(header));
         }
 
         [Fact]
@@ -65,7 +65,7 @@ namespace SvdGenerator.Tests
         {
             var header = Generate(Device(Peripheral("P", 0x1000, Register("R0", 0, Field("F", 0, 1), size: null)), extra: "<size>16</size>"))["p.hpp"];
 
-            Assert.Equal(new[] { "opsy::utility::memory<uint16_t,r0_r> r0;" }, Members(header));
+            Assert.Equal(new[] { "mmio::memory<uint16_t,r0_r> r0;" }, Members(header));
         }
 
         [Fact]
@@ -73,7 +73,7 @@ namespace SvdGenerator.Tests
         {
             var header = GenerateOne(Peripheral("P", 0x1000, SimpleRegister(), extra: "<access>read-only</access>"));
 
-            Assert.Equal(new[] { "opsy::utility::read_only_memory<uint32_t,r_r> r;" }, Members(header));
+            Assert.Equal(new[] { "mmio::read_only_memory<uint32_t,r_r> r;" }, Members(header));
         }
 
         [Fact]
@@ -86,7 +86,7 @@ namespace SvdGenerator.Tests
             Assert.Contains("\tcl_c cl;\n", header);
             Assert.Contains("static_assert(offsetof(p_p, cl) == 16);", header);
             Assert.Contains("static_assert(offsetof(p_p::cl_c, y) == 4);", header);
-            Assert.Contains("opsy::utility::memory<uint32_t,y_r> y;", header);
+            Assert.Contains("mmio::memory<uint32_t,y_r> y;", header);
         }
 
         [Fact]
@@ -98,7 +98,7 @@ namespace SvdGenerator.Tests
             Assert.Contains("\tch_c ch[2];\n", header);
             Assert.Contains("static_assert(offsetof(p_p, ch) == 32);", header);
             Assert.Contains("static_assert(sizeof(p_p::ch_c) == 8);", header);
-            Assert.Contains("\topsy::utility::padding<4> _p4;\n", header);
+            Assert.Contains("\tmmio::padding<4> _p4;\n", header);
         }
 
         [Fact]
@@ -110,7 +110,7 @@ namespace SvdGenerator.Tests
 
             Assert.Contains("static_assert(offsetof(p_p, ax) == 0);", header);
             Assert.Contains("static_assert(offsetof(p_p, ay) == 4);", header);
-            Assert.Contains("opsy::utility::memory<uint32_t,b_r> b[2];", header);
+            Assert.Contains("mmio::memory<uint32_t,b_r> b[2];", header);
             Assert.Contains("static_assert(offsetof(p_p, b) == 8);", header);
         }
 
@@ -130,7 +130,7 @@ namespace SvdGenerator.Tests
                 Register("A", 0, Field("F", 0, 3), size: "8") +
                 Register("B", 1, size: null, derivedFrom: "A")));
 
-            Assert.Contains("opsy::utility::memory<uint8_t,x_r> b;", header);
+            Assert.Contains("mmio::memory<uint8_t,x_r> b;", header);
         }
 
         [Fact]
@@ -194,7 +194,7 @@ namespace SvdGenerator.Tests
         {
             var header = GenerateOne(Peripheral("P", 0x1000, Register("R", 0, Field("F", 0, 1), extra: "<access>read-writeonce</access>")));
 
-            Assert.Contains("opsy::utility::memory<uint32_t,r_r> r;", header);
+            Assert.Contains("mmio::memory<uint32_t,r_r> r;", header);
         }
 
         [Theory]

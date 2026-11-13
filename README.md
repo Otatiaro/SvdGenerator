@@ -10,7 +10,7 @@ description file.
 #include <STM32H563/rcc.hpp>
 
 using namespace STM32H563;
-using opsy::utility::atomic;
+using mmio::atomic;
 
 rcc.ahb2enr |= rcc_p::ahb2enr_r::gpioden_f() | atomic;                      // atomic set
 gpiod.moder <<= gpio_p::moder_r::mode8_f(0b10) || gpio_p::moder_r::mode9_f(0b10) || atomic; // atomic clear-and-set
@@ -18,23 +18,17 @@ while (!rcc.cr.load().hserdy()) {}                                          // t
 gpdma1.c[2].cr = gpdma_p::c_c::cr_r::tcie_f() | gpdma_p::c_c::cr_r::en_f(); // channel 2
 ```
 
-The output is wired to [opsy](https://github.com/Otatiaro/OpSy)'s
-[`utility/memory.hpp`](https://github.com/Otatiaro/OpSy/blob/9df189a2dc78ff306d8982fc025e164371c5d3fc/utility/memory.hpp)
-register building blocks (`opsy::utility::memory`, `read_only_memory`,
-`write_only_memory`, `clear_set`, `padding`). The link is pinned to the
-exact commit the generator targets, so it survives any future breaking
-change.
+The generated headers are self-contained: they need C++20, GCC or Clang,
+and the standard library. The register building blocks they are made of
+(`mmio::memory`, `read_only_memory`, `write_only_memory`, `clear_set`,
+`padding`, the `atomic` tag) are written next to them, in
+`mmio.hpp`. The source of that file is
+[`Support/mmio.hpp`](Support/mmio.hpp); its header
+comment says what `atomic` guarantees and where it depends on the device.
 
-You have two ways to provide that header:
-
-- **With opsy on your include path**, no extra step — the generated
-  files use `<utility/memory.hpp>`.
-- **Without opsy**, drop a copy of `memory.hpp` next to the generated
-  headers (lowercase, same directory). Each file probes
-  `__has_include("memory.hpp")` first and falls back to
-  `<utility/memory.hpp>` only if no local copy is found.
-
-The generated code needs C++20 and GCC or Clang.
+The headers work with any runtime, or none. They were first written for
+[opsy](https://github.com/Otatiaro/OpSy), whose `utility/memory.hpp` these
+building blocks come from.
 
 ## Install
 
@@ -75,7 +69,10 @@ Reads the SVD file and writes into `<output_dir>`:
 
 - one `.hpp` per group of peripherals (`gpio.hpp`, `tim.hpp`, ...);
 - `interrupts.hpp`, the interrupt numbers;
-- `device.hpp`, the name of the device and what the SVD says of its core.
+- `device.hpp`, the name of the device and what the SVD says of its core;
+- `mmio.hpp`, the register building blocks, the same for every
+  device. Two devices generated in two directories can be included in one
+  translation unit.
 
 Everything is in a namespace named after the device, in upper case
 (e.g. `STM32H563`).
@@ -87,9 +84,8 @@ stderr.
 ### What happens to the files already there
 
 The generator only replaces or removes files it wrote itself, which it
-recognises by their first line. A `memory.hpp`, a `CMakeLists.txt` or a
-linker script next to the headers are left alone, and so are headers of
-your own. Generated headers that the SVD no longer produces are removed,
+recognises by their first line. A `CMakeLists.txt` or a linker script
+next to the headers are left alone, and so are headers of your own. Generated headers that the SVD no longer produces are removed,
 and a header that is already up to date is not rewritten, so its
 timestamp does not move.
 
@@ -129,7 +125,7 @@ its copyright and license. Line endings are LF on every platform.
 
 ### Names
 
-- All identifiers are `snake_case`. Same convention as opsy core.
+- All identifiers are `snake_case`.
 - Class names carry a suffix that tells their kind: `*_p` for a
   peripheral, `*_c` for a cluster (a group of registers), `*_r` for a
   register, `*_f` for a field.
@@ -277,10 +273,8 @@ Register values also compare and mask: `==`, `!=`, `&`, `^`, `|`, `~`.
 ## Tested targets
 
 The CI smoke matrix builds the generator, runs it against a pinned
-SVD from each vendor below, drops the opsy `memory.hpp` next to the
-output, and syntax-checks every generated peripheral header with
-`g++ -std=c++20 -Wall -Wextra -Wshadow -Wcast-align -Wconversion -Wsign-conversion -Wdouble-promotion -Werror`
-(the strictest set opsy's own BSPs compile with).
+SVD from each vendor below, and syntax-checks every generated header with
+`g++ -std=c++20 -Wall -Wextra -Wshadow -Wcast-align -Wconversion -Wsign-conversion -Wdouble-promotion -Werror`.
 
 | Vendor | Core | SVD pulled from |
 |---|---|---|
@@ -290,9 +284,9 @@ output, and syntax-checks every generated peripheral header with
 | NXP Kinetis / MK64F12 | Cortex-M4 | [`cmsis-svd-data/data/NXP/MK64F12.svd`](https://github.com/cmsis-svd/cmsis-svd-data/blob/main/data/NXP/MK64F12.svd) |
 | Nordic / nRF52840 | Cortex-M4 | [`cmsis-svd-data/data/Nordic/nrf52840.svd`](https://github.com/cmsis-svd/cmsis-svd-data/blob/main/data/Nordic/nrf52840.svd) |
 
-The exact upstream commit the smoke compiles against is pinned in
-`.github/workflows/ci.yml` (env vars `OPSY_REF` and `SVD_DATA_REF`),
-so a one-line bump is all it takes to refresh.
+The exact upstream commit the SVD files are taken from is pinned in
+`.github/workflows/ci.yml` (env var `SVD_DATA_REF`), so a one-line bump
+is all it takes to refresh.
 
 ### CMSIS-SVD constructs the generator handles
 
@@ -324,7 +318,7 @@ so a one-line bump is all it takes to refresh.
 - Overlapping registers that do not start where the widest one does
   are emitted in named `_lane_N` structs rather than truly anonymous
   ones (GCC's anonymous-struct extension forbids non-POD members, and
-  `opsy::utility::memory` embeds a `std::atomic`). They are reached
+  `mmio::memory` embeds a `std::atomic`). They are reached
   via `peripheral._lane_N.fooN` rather than `peripheral.fooN`.
 - A register size other than 8, 16, 32 or 64 bits is an error.
 - A cluster that cannot be a C++ class of the right size and alignment

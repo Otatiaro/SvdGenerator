@@ -32,7 +32,7 @@ namespace SvdGenerator.Tests
         {
             var header = GenerateOne(Peripheral("P", 0x1000, Register("R", 0, Field("A", 0, 1, first) + Field("B", 1, 1, second))));
 
-            Assert.Equal(new[] { $"opsy::utility::{storage}<uint32_t,r_r> r;" }, Members(header));
+            Assert.Equal(new[] { $"mmio::{storage}<uint32_t,r_r> r;" }, Members(header));
         }
 
         [Fact]
@@ -40,7 +40,7 @@ namespace SvdGenerator.Tests
         {
             var header = GenerateOne(Peripheral("P", 0x1000, Register("R", 0, Field("A", 0, 1, ReadOnly), extra: ReadWrite)));
 
-            Assert.Equal(new[] { "opsy::utility::read_only_memory<uint32_t,r_r> r;" }, Members(header));
+            Assert.Equal(new[] { "mmio::read_only_memory<uint32_t,r_r> r;" }, Members(header));
         }
 
         [Fact]
@@ -78,17 +78,17 @@ namespace SvdGenerator.Tests
         {
             var body = ClassBody(GenerateOne(Peripheral("P", 0x1000, Register("R", 0, Field("F", 0, width)))), "f_f");
 
-            Assert.Equal(checks, body.Contains("if (__builtin_constant_p(value) && value > range) detail::field_value_out_of_range();"));
+            Assert.Equal(checks, body.Contains("if (__builtin_constant_p(value) && value > range) mmio::detail::field_value_out_of_range();"));
             Assert.Equal(checks, body.Contains("value_(value & range)"));
         }
 
         [Fact]
-        public void The_check_is_declared_once_per_header_in_the_device_namespace()
+        public void The_check_is_declared_with_the_register_building_blocks()
         {
-            var header = GenerateOne(Peripheral("P", 0x1000, SimpleRegister()));
+            var files = Generate(Device(Peripheral("P", 0x1000, SimpleRegister())));
 
-            Assert.Equal(1, Lines(header).Count(l => l == "void field_value_out_of_range();"));
-            Assert.True(header.IndexOf("namespace DEV\n", StringComparison.Ordinal) < header.IndexOf("namespace detail\n", StringComparison.Ordinal));
+            Assert.Equal(1, Lines(files[Emitter.RegistersFile]).Count(l => l == "void field_value_out_of_range();"));
+            Assert.DoesNotContain("void field_value_out_of_range();", files["p.hpp"]);
         }
 
         [Fact]
@@ -99,7 +99,7 @@ namespace SvdGenerator.Tests
             Assert.Contains("constexpr auto operator &(r_r other) const -> r_r", body);
             Assert.Contains("constexpr auto operator ^(r_r other) const -> r_r", body);
             Assert.Contains("constexpr bool operator ==(const r_r&) const = default;", body);
-            Assert.Contains("auto operator ||(opsy::utility::atomic_tag) const = delete;", body);
+            Assert.Contains("auto operator ||(mmio::atomic_tag) const = delete;", body);
         }
     }
 }

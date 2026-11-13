@@ -20,7 +20,7 @@ namespace SvdGenerator
         //    too), and emitting `auto int() const` is a syntax error.
         //  - Identifiers the register class itself defines (value() returns
         //    the underlying integer and is part of the contract consumed by
-        //    opsy::utility::memory).
+        //    mmio::memory).
         private static readonly HashSet<string> Keywords = new(StringComparer.Ordinal)
         {
             // C++ reserved keywords (C++23 set, identifier-shaped only).

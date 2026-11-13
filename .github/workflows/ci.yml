@@ -41,7 +41,6 @@ jobs:
         run: dotnet build SvdGenerator.csproj -c Release
 
       - name: Generate the fixture, compile what must compile, reject what must not
-        # OPSY_REF in tests/cpp/run.sh pins the memory.hpp the tests compile against.
         run: tests/cpp/run.sh dotnet run --project SvdGenerator.csproj -c Release --no-build --no-launch-profile --
 
   smoke:
@@ -61,9 +60,8 @@ jobs:
             file: MK64F12.svd
           - vendor: Nordic
             file: nrf52840.svd
-    # Bump these to refresh the upstream sources the smoke compiles against.
+    # Bump this to refresh the upstream SVD files the smoke generates from.
     env:
-      OPSY_REF: 9df189a2dc78ff306d8982fc025e164371c5d3fc
       SVD_DATA_REF: c65f8551e57c770344d229dcaa0bf838fa29aff4
       SVD_VENDOR: ${{ matrix.vendor }}
       SVD_FILE: ${{ matrix.file }}
@@ -90,26 +88,18 @@ jobs:
           dotnet run --project SvdGenerator.csproj -c Release --no-build --no-launch-profile -- \
             "svd/${SVD_FILE}" out
 
-      - name: Drop opsy memory.hpp next to the generated headers
-        # Next to the generated headers, where __has_include picks it up. The
-        # generator leaves it alone on the next run.
-        run: |
-          curl -fsSL \
-            "https://raw.githubusercontent.com/Otatiaro/OpSy/${OPSY_REF}/utility/memory.hpp" \
-            -o "out/memory.hpp"
-
       - name: g++ syntax-check every generated header
         # Compile a 1-line TU that #includes the header rather than passing
         # the .hpp as the main file. That mirrors real downstream usage and
         # avoids the spurious "#pragma once in main file" diagnostic.
-        # Warning set mirrors the strictest flags opsy itself ships with so
-        # a regression that would break a real BSP build is caught here.
+        # Warning set mirrors the strictest flags the BSPs built on these
+        # headers compile with, so a regression that would break a real
+        # build is caught here.
         run: |
           set -uo pipefail
           fail=0
           for f in out/*.hpp; do
             name=$(basename "$f")
-            if [ "$name" = "memory.hpp" ]; then continue; fi
             echo "::group::$name"
             if ! printf '#include "%s"\n' "$name" | g++ \
                 -std=c++20 \
