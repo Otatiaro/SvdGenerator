@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+Fixture of the SvdGenerator C++ tests. Not a real device.
+-->
+<device schemaVersion="1.1">
+  <name>FIXTURE</name>
+  <version>1.0</version>
+  <description>Device exercising what the generated headers promise</description>
+  <cpu>
+    <name>CM33</name>
+    <revision>r0p0</revision>
+    <endian>little</endian>
+    <mpuPresent>true</mpuPresent>
+    <fpuPresent>false</fpuPresent>
+    <nvicPrioBits>3</nvicPrioBits>
+    <vendorSystickConfig>false</vendorSystickConfig>
+  </cpu>
+  <addressUnitBits>8</addressUnitBits>
+  <width>32</width>
+  <size>32</size>
+  <peripherals>
+    <peripheral>
+      <name>CTL</name>
+      <description>Control block: fields of every width and access</description>
+      <baseAddress>0x40001000</baseAddress>
+      <interrupt><name>CTL</name><description>Control interrupt</description><value>2</value></interrupt>
+      <interrupt><name>CTL_ERR</name><description>Control error interrupt</description><value>5</value></interrupt>
+      <registers>
+        <register>
+          <name>CTL_CR</name>
+          <description>Control register</description>
+          <addressOffset>0x0</addressOffset>
+          <resetValue>0x00000010</resetValue>
+          <fields>
+            <field><name>EN</name><description>Enable</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth><access>read-write</access></field>
+            <field><name>RDY</name><description>Ready, set by hardware</description><bitOffset>1</bitOffset><bitWidth>1</bitWidth><access>read-only</access></field>
+            <field>
+              <name>MODE</name><description>Operating mode</description><bitOffset>4</bitOffset><bitWidth>3</bitWidth><access>read-write</access>
+              <enumeratedValues>
+                <enumeratedValue><name>Off</name><description>Stopped</description><value>0</value></enumeratedValue>
+                <enumeratedValue><name>Slow</name><description>Low-power run</description><value>1</value></enumeratedValue>
+                <enumeratedValue><name>Fast</name><description>Full-speed run</description><value>5</value></enumeratedValue>
+              </enumeratedValues>
+            </field>
+            <field>
+              <name>SRC</name><description>Clock source</description><bitOffset>8</bitOffset><bitWidth>2</bitWidth><access>read-write</access>
+              <enumeratedValues>
+                <enumeratedValue><name>B_0x0</name><description>Internal oscillator</description><value>0x0</value></enumeratedValue>
+                <enumeratedValue><name>B_0x1</name><description>External oscillator</description><value>0x1</value></enumeratedValue>
+              </enumeratedValues>
+            </field>
+            <field><name>DIV</name><description>Divider</description><bitOffset>16</bitOffset><bitWidth>9</bitWidth><access>read-write</access></field>
+            <field><name>INT</name><description>Field named like a keyword</description><bitOffset>31</bitOffset><bitWidth>1</bitWidth><access>read-write</access></field>
+          </fields>
+        </register>
+        <register>
+          <name>CTL_SR</name>
+          <description>Status register: every field is read-only</description>
+          <addressOffset>0x4</addressOffset>
+          <fields>
+            <field><name>BUSY</name><description>Busy</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth><access>read-only</access></field>
+            <field><name>LEVEL</name><description>Fill level</description><bitOffset>8</bitOffset><bitWidth>8</bitWidth><access>read-only</access></field>
+          </fields>
+        </register>
+        <register>
+          <name>CTL_ICR</name>
+          <description>Interrupt clear register: every field is write-only</description>
+          <addressOffset>0x8</addressOffset>
+          <fields>
+            <field><name>CBUSY</name><description>Clear busy</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth><access>write-only</access></field>
+          </fields>
+        </register>
+        <register>
+          <name>CTL_DATA</name>
+          <description>Data register without fields</description>
+          <addressOffset>0x10</addressOffset>
+        </register>
+        <register>
+          <name>CTL_SMALL</name>
+          <description>8-bit register</description>
+          <addressOffset>0x14</addressOffset>
+          <size>8</size>
+          <fields>
+            <field><name>NIB</name><description>Nibble</description><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>PORTA</name>
+      <description>Port A</description>
+      <groupName>PORT</groupName>
+      <baseAddress>0x40002000</baseAddress>
+      <registers>
+        <register>
+          <name>PORTA_MODER</name><description>Mode register</description><addressOffset>0x0</addressOffset><resetValue>0xABFFFFFF</resetValue>
+          <fields>
+            <field><name>MODE0</name><description>Mode of pin 0</description><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>MODE1</name><description>Mode of pin 1</description><bitOffset>2</bitOffset><bitWidth>2</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>PORTA_BSRR</name><description>Bit set/reset register</description><addressOffset>0x18</addressOffset><access>write-only</access><resetValue>0</resetValue>
+          <fields>
+            <field><name>BS0</name><description>Set pin 0</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BR0</name><description>Reset pin 0</description><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>PORTB</name>
+      <description>Port B: same registers as port A under its own names, another reset value</description>
+      <groupName>PORT</groupName>
+      <baseAddress>0x40002400</baseAddress>
+      <registers>
+        <register>
+          <name>PORTB_MODER</name><description>Mode register</description><addressOffset>0x0</addressOffset><resetValue>0xFFFFFEBF</resetValue>
+          <fields>
+            <field><name>MODE0</name><description>Mode of pin 0</description><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>MODE1</name><description>Mode of pin 1</description><bitOffset>2</bitOffset><bitWidth>2</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>PORTB_BSRR</name><description>Bit set/reset register</description><addressOffset>0x18</addressOffset><access>write-only</access><resetValue>0</resetValue>
+          <fields>
+            <field><name>BS0</name><description>Set pin 0</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>BR0</name><description>Reset pin 0</description><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral derivedFrom="PORTA">
+      <name>PORTC</name>
+      <baseAddress>0x40002800</baseAddress>
+    </peripheral>
+    <peripheral>
+      <name>DMA1</name>
+      <description>DMA controller: channels as numbered registers, the last one with one more register</description>
+      <groupName>DMA</groupName>
+      <baseAddress>0x40003000</baseAddress>
+      <interrupt><name>DMA1_CH0</name><description>Channel 0 interrupt</description><value>8</value></interrupt>
+      <registers>
+        <register>
+          <name>DMA_ISR</name><description>Interrupt status</description><addressOffset>0x0</addressOffset><access>read-only</access>
+          <fields><field><name>TC0</name><description>Transfer complete 0</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>DMA_C0CR</name><description>Channel 0 control</description><addressOffset>0x10</addressOffset>
+          <fields>
+            <field><name>EN</name><description>Enable</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>PRIO</name><description>Priority</description><bitOffset>4</bitOffset><bitWidth>2</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>DMA_C0SAR</name><description>Channel 0 source address</description><addressOffset>0x14</addressOffset>
+          <fields><field><name>SA</name><description>Source address</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>DMA_C1CR</name><description>Channel 1 control</description><addressOffset>0x30</addressOffset>
+          <fields>
+            <field><name>EN</name><description>Enable</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>PRIO</name><description>Priority</description><bitOffset>4</bitOffset><bitWidth>2</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>DMA_C1SAR</name><description>Channel 1 source address</description><addressOffset>0x34</addressOffset>
+          <fields><field><name>SA</name><description>Source address</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>DMA_C2CR</name><description>Channel 2 control</description><addressOffset>0x50</addressOffset>
+          <fields>
+            <field><name>EN</name><description>Enable</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>PRIO</name><description>Priority</description><bitOffset>4</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>TWOD</name><description>2D addressing, last channel only</description><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
+        </register>
+        <register>
+          <name>DMA_C2SAR</name><description>Channel 2 source address</description><addressOffset>0x54</addressOffset>
+          <fields><field><name>SA</name><description>Source address</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>DMA_C2TR3</name><description>Channel 2 2D offsets, last channel only</description><addressOffset>0x58</addressOffset>
+          <fields><field><name>SAO</name><description>Source address offset</description><bitOffset>0</bitOffset><bitWidth>13</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>BANK</name>
+      <description>SVD cluster array, a register array and overlapping registers</description>
+      <baseAddress>0x40004000</baseAddress>
+      <registers>
+        <cluster>
+          <dim>3</dim>
+          <dimIncrement>0x10</dimIncrement>
+          <name>SLOT[%s]</name>
+          <description>One slot</description>
+          <addressOffset>0x0</addressOffset>
+          <register>
+            <name>CFG</name><description>Slot configuration</description><addressOffset>0x0</addressOffset>
+            <fields><field><name>ON</name><description>Slot on</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field></fields>
+          </register>
+          <register>
+            <name>CNT</name><description>Slot counter</description><addressOffset>0x8</addressOffset><size>16</size>
+            <fields><field><name>CNT</name><description>Count</description><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields>
+          </register>
+        </cluster>
+        <register>
+          <dim>4</dim>
+          <dimIncrement>4</dimIncrement>
+          <name>KEY[%s]</name><description>Key word</description><addressOffset>0x40</addressOffset>
+          <fields><field><name>K</name><description>Key</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>WORD</name><description>Word view</description><addressOffset>0x50</addressOffset>
+          <fields><field><name>W</name><description>Word</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>BYTE0</name><description>Byte view of the word, first byte</description><addressOffset>0x50</addressOffset><size>8</size>
+          <fields><field><name>B</name><description>Byte</description><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>BYTE1</name><description>Byte view of the word, second byte</description><addressOffset>0x51</addressOffset><size>8</size>
+          <fields><field><name>B</name><description>Byte</description><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+  </peripherals>
+</device>

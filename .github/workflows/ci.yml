@@ -16,13 +16,33 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore SvdGenerator.csproj
+        run: dotnet restore SvdGenerator.sln
 
       - name: Build
-        run: dotnet build SvdGenerator.csproj -c Release --no-restore
+        run: dotnet build SvdGenerator.sln -c Release --no-restore
 
       - name: Format check
-        run: dotnet format SvdGenerator.csproj --verify-no-changes --no-restore
+        run: dotnet format SvdGenerator.sln --verify-no-changes --no-restore
+
+      - name: Unit tests
+        run: dotnet test SvdGenerator.sln -c Release --no-build
+
+  cpp:
+    name: C++ tests on the fixture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build SvdGenerator
+        run: dotnet build SvdGenerator.csproj -c Release
+
+      - name: Generate the fixture, compile what must compile, reject what must not
+        # OPSY_REF in tests/cpp/run.sh pins the memory.hpp the tests compile against.
+        run: tests/cpp/run.sh dotnet run --project SvdGenerator.csproj -c Release --no-build --no-launch-profile --
 
   smoke:
     name: smoke (${{ matrix.vendor }}/${{ matrix.file }})
@@ -71,8 +91,8 @@ jobs:
             "svd/${SVD_FILE}" out
 
       - name: Drop opsy memory.hpp next to the generated headers
-        # The generator runs first because Program.cs wipes the output dir;
-        # we add the local memory.hpp afterwards so __has_include picks it up.
+        # Next to the generated headers, where __has_include picks it up. The
+        # generator leaves it alone on the next run.
         run: |
           curl -fsSL \
             "https://raw.githubusercontent.com/Otatiaro/OpSy/${OPSY_REF}/utility/memory.hpp" \
