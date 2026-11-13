@@ -8,8 +8,63 @@
 #include <FIXTURE/interrupts.hpp>
 #include <FIXTURE/port.hpp>
 
+// A second device generated from the same registers, with its own copy of
+// mmio.hpp: both must live in one translation unit.
+#include <TWIN/ctl.hpp>
+#include <TWIN/interrupts.hpp>
+
 #include <string_view>
 #include <type_traits>
+
+static_assert(!std::is_same_v<FIXTURE::ctl_p, TWIN::ctl_p>);
+static_assert(std::is_same_v<decltype(FIXTURE::ctl_p::cr), mmio::memory<uint32_t, FIXTURE::ctl_p::cr_r>>);
+static_assert(std::is_same_v<decltype(TWIN::ctl_p::cr), mmio::memory<uint32_t, TWIN::ctl_p::cr_r>>);
+static_assert(FIXTURE::irq_count == TWIN::irq_count);
+
+// ── The register building blocks, on a register type written by hand ───────
+struct mock_r
+{
+	[[maybe_unused]] static constexpr uint32_t mask = 0xFFFFFFFFu;
+
+	constexpr mock_r(uint32_t value = 0) : value_{value} {}
+	constexpr uint32_t value() const { return value_; }
+	constexpr operator uint32_t() const { return value_; }
+	constexpr mock_r operator|(mock_r o) const { return mock_r{value_ | o.value_}; }
+	constexpr mock_r operator&(mock_r o) const { return mock_r{value_ & o.value_}; }
+	constexpr mock_r operator^(mock_r o) const { return mock_r{value_ ^ o.value_}; }
+	constexpr mock_r operator~() const { return mock_r{~value_}; }
+
+	uint32_t value_;
+};
+
+static_assert(sizeof(mmio::memory<uint32_t, mock_r>) == 4 && alignof(mmio::memory<uint32_t, mock_r>) == 4);
+static_assert(sizeof(mmio::read_only_memory<uint32_t, mock_r>) == 4);
+static_assert(sizeof(mmio::write_only_memory<uint32_t, mock_r>) == 4);
+static_assert(sizeof(mmio::padding<7>) == 7 && alignof(mmio::padding<7>) == 1);
+static_assert((mmio::clear_set<mock_r>{mock_r{0x0F}, mock_r{0xF0}} || mmio::clear_set<mock_r>{mock_r{0x100}, mock_r{0x200}}).clear().value() == 0x10F);
+
+void building_blocks(mmio::memory<uint32_t, mock_r>& rw, mmio::read_only_memory<uint32_t, mock_r>& ro, mmio::write_only_memory<uint32_t, mock_r>& wo)
+{
+	using mmio::atomic;
+	using mmio::clear_set;
+
+	rw = mock_r{1};
+	(void)rw.load();
+	(void)static_cast<mock_r>(rw);
+
+	rw |= mock_r{0x0F};
+	rw &= mock_r{0xF0};
+	rw ^= mock_r{0xFF};
+	rw <<= clear_set<mock_r>{mock_r{0x0F}, mock_r{0xF0}};
+
+	rw |= mock_r{0x0F} | atomic;
+	rw &= mock_r{0xF0} | atomic;
+	rw ^= mock_r{0xFF} | atomic;
+	rw <<= clear_set<mock_r>{mock_r{0x0F}, mock_r{0xF0}} || atomic;
+
+	(void)ro.load();
+	wo = mock_r{0x42};
+}
 
 using namespace FIXTURE;
 
@@ -35,7 +90,7 @@ static_assert((cr::mode_f::slow | cr::en_f()).value() == 0x11);
 static_assert(cr(0x50).mode() == cr::mode_f::fast);
 static_assert(cr(0x10).mode() != cr::mode_f::fast);
 static_assert(std::is_same_v<decltype(cr::mode_f::off), const cr::mode_f>);
-constexpr opsy::utility::clear_set<cr> to_fast = cr::mode_f::fast || cr::en_f();
+constexpr mmio::clear_set<cr> to_fast = cr::mode_f::fast || cr::en_f();
 static_assert(to_fast.clear().value() == 0x71 && to_fast.set().value() == 0x51);
 
 // ── Registers: accessors, operators, reset value ───────────────────────────
@@ -55,7 +110,7 @@ static_assert(std::is_same_v<decltype(ctl_p::small_r(0).value()), uint8_t>);
 static_assert(ctl_p::small_r(ctl_p::small_r::nib_f(0xA)).value() == 0xA0);
 
 // ── clear_set: what `reg <<= a || b` clears and sets ───────────────────────
-constexpr opsy::utility::clear_set<cr> update = cr::mode_f(1) || cr::div_f(3);
+constexpr mmio::clear_set<cr> update = cr::mode_f(1) || cr::div_f(3);
 static_assert(update.clear().value() == (0x70u | 0x01FF0000u));
 static_assert(update.set().value() == (0x10u | 0x00030000u));
 
@@ -65,16 +120,16 @@ static_assert(offsetof(ctl_p, data) == 0x10);
 static_assert(offsetof(ctl_p, small) == 0x14);
 
 // ── Register storage follows the register's access ─────────────────────────
-static_assert(std::is_same_v<decltype(port_p::bsrr), opsy::utility::write_only_memory<uint32_t, port_p::bsrr_r>>);
-static_assert(std::is_same_v<decltype(dma_p::isr), opsy::utility::read_only_memory<uint32_t, dma_p::isr_r>>);
-static_assert(std::is_same_v<decltype(ctl_p::cr), opsy::utility::memory<uint32_t, cr>>);
+static_assert(std::is_same_v<decltype(port_p::bsrr), mmio::write_only_memory<uint32_t, port_p::bsrr_r>>);
+static_assert(std::is_same_v<decltype(dma_p::isr), mmio::read_only_memory<uint32_t, dma_p::isr_r>>);
+static_assert(std::is_same_v<decltype(ctl_p::cr), mmio::memory<uint32_t, cr>>);
 // ... and, when the SVD states the access on the fields only, what they have in common.
-static_assert(std::is_same_v<decltype(ctl_p::sr), opsy::utility::read_only_memory<uint32_t, ctl_p::sr_r>>);
-static_assert(std::is_same_v<decltype(ctl_p::icr), opsy::utility::write_only_memory<uint32_t, ctl_p::icr_r>>);
+static_assert(std::is_same_v<decltype(ctl_p::sr), mmio::read_only_memory<uint32_t, ctl_p::sr_r>>);
+static_assert(std::is_same_v<decltype(ctl_p::icr), mmio::write_only_memory<uint32_t, ctl_p::icr_r>>);
 
 // ── A read-only field is read, never written ───────────────────────────────
 static_assert(!std::is_convertible_v<cr::rdy_f, cr>);
-static_assert(!std::is_convertible_v<cr::rdy_f, opsy::utility::clear_set<cr>>);
+static_assert(!std::is_convertible_v<cr::rdy_f, mmio::clear_set<cr>>);
 static_assert(std::is_convertible_v<cr::en_f, cr>);
 static_assert(cr(0x2).rdy());
 static_assert(cr::rdy_f::mask == 0x2);
@@ -111,8 +166,8 @@ static_assert(sizeof(dma_p) == 0x10 + 3 * 0x20);
 static_assert(std::is_same_v<decltype(bank_p::slot), bank_p::slot_c[3]>);
 static_assert(sizeof(bank_p::slot_c) == 0x10);
 static_assert(offsetof(bank_p::slot_c, cnt) == 0x8);
-static_assert(std::is_same_v<decltype(bank_p::slot_c::cnt), opsy::utility::memory<uint16_t, bank_p::slot_c::cnt_r>>);
-static_assert(std::is_same_v<decltype(bank_p::key), opsy::utility::memory<uint32_t, bank_p::key_r>[4]>);
+static_assert(std::is_same_v<decltype(bank_p::slot_c::cnt), mmio::memory<uint16_t, bank_p::slot_c::cnt_r>>);
+static_assert(std::is_same_v<decltype(bank_p::key), mmio::memory<uint32_t, bank_p::key_r>[4]>);
 static_assert(offsetof(bank_p, key) == 0x40);
 // Registers that overlap: the widest one directly, the others in a lane.
 static_assert(offsetof(bank_p, word) == 0x50);
@@ -131,7 +186,7 @@ static_assert(FIXTURE::has_mpu && !FIXTURE::has_fpu);
 template<typename TPort>
 void make_output(TPort& port)
 {
-	using opsy::utility::atomic;
+	using mmio::atomic;
 	port.moder <<= port_p::moder_r::mode0_f(1) || atomic;
 }
 
@@ -139,7 +194,7 @@ void take_irq(std::uint32_t) {}
 
 void driver()
 {
-	using opsy::utility::atomic;
+	using mmio::atomic;
 
 	ctl.cr = cr::en_f() | cr::mode_f(1);
 	ctl.cr = cr::en_f() | cr::mode_f::fast;

@@ -6,7 +6,7 @@
     <Product>SvdGenerator</Product>
     <Copyright>Copyright (c) 2019-2026 Thomas Legrand</Copyright>
     <Authors>Thomas Legrand</Authors>
-    <Description>Generates typed C++ peripheral headers for ARM Cortex-M targets from a CMSIS-SVD file. Output is wired to opsy's utility/memory.hpp register building blocks.</Description>
+    <Description>Generates typed C++ peripheral headers for ARM Cortex-M targets from a CMSIS-SVD file. The headers are self-contained: strongly-typed, atomic-aware register access with nothing but the standard library.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Version>0.0.0-dev</Version>
     <InformationalVersion>0.0.0-dev</InformationalVersion>
@@ -26,6 +26,11 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The register building blocks every generated header includes: a real C++ file,
+         embedded in the generator and written next to the headers. -->
+    <EmbeddedResource Include="Support/mmio.hpp" LogicalName="mmio.hpp" />
   </ItemGroup>
   <ItemGroup>
     <!-- The test project lives under tests/ and has its own .csproj. -->

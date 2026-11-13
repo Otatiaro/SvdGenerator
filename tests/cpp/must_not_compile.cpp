@@ -7,7 +7,7 @@
 #include <FIXTURE/port.hpp>
 
 using namespace FIXTURE;
-using opsy::utility::atomic;
+using mmio::atomic;
 
 void cases()
 {
@@ -58,3 +58,15 @@ void cases()
 	ctl.cr <<= (ctl_p::cr_r::mode_f(1) | ctl_p::cr_r::div_f(2)) || atomic;
 #endif
 }
+
+// A register must be accessed in one instruction: a width the core cannot load
+// and store atomically is refused. Depends on the target, hence ARM only.
+struct wide_r
+{
+	constexpr wide_r(std::uint64_t value = 0) : value_(value) {}
+	constexpr std::uint64_t value() const { return value_; }
+	std::uint64_t value_;
+};
+#ifdef CASE_ARM_REGISTER_WIDER_THAN_THE_CORE_ACCESSES_ATOMICALLY // expect: TInt is not lock-free on this target
+[[gnu::used]] mmio::memory<std::uint64_t, wide_r> g_wide;
+#endif

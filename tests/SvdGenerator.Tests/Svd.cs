@@ -48,7 +48,7 @@ namespace SvdGenerator.Tests
 
         /// <summary>The lines of a header that declare a register member or padding.</summary>
         public static List<string> Members(string content) =>
-            Lines(content).Select(l => l.Trim()).Where(l => l.StartsWith("opsy::utility::", StringComparison.Ordinal)).ToList();
+            Lines(content).Select(l => l.Trim()).Where(l => l.StartsWith("mmio::", StringComparison.Ordinal)).ToList();
     }
 
     /// <summary>A directory under the system's temporary directory, removed with the test.</summary>

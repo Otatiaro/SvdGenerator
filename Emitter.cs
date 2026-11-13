@@ -20,6 +20,9 @@ namespace SvdGenerator
         const string InterruptsFile = "interrupts.hpp";
         const string DeviceFile = "device.hpp";
 
+        /// <summary>The header of the register building blocks, written next to the others.</summary>
+        public const string RegistersFile = "mmio.hpp";
+
         public static SortedDictionary<string, string> Emit(Device device, string generatorVersion)
         {
             var files = new SortedDictionary<string, string>(StringComparer.Ordinal);
@@ -28,6 +31,7 @@ namespace SvdGenerator
 
             files[InterruptsFile] = Normalize(new StringBuilder(banner).Append(Interrupts(device, ns)));
             files[DeviceFile] = Normalize(new StringBuilder(banner).Append(DeviceDescription(device, ns)));
+            files[RegistersFile] = Normalize(new StringBuilder(RegistersBanner(generatorVersion)).Append(Registers()));
 
             // One header per group of peripherals: the SVD's groupName, or what
             // the names of the peripherals have in common (see Structure).
@@ -35,8 +39,7 @@ namespace SvdGenerator
             {
                 var sb = new StringBuilder();
                 sb.Append(banner);
-                AppendLines(sb, "#pragma once", "", "#if __has_include(\"memory.hpp\")", "#include \"memory.hpp\"", "#else", "#include <utility/memory.hpp>", "#endif", "", $"namespace {ns}", "{", "");
-                sb.Append(Support);
+                AppendLines(sb, "#pragma once", "", $"#include \"{RegistersFile}\"", "", $"namespace {ns}", "{", "");
 
                 var types = group.ToList();
                 foreach (var type in types)
@@ -58,13 +61,29 @@ namespace SvdGenerator
         }
 
         // The name of a peripheral header; never one of the headers the
-        // generator writes for the device itself, nor the memory.hpp the user
-        // may keep next to them.
+        // generator writes for the device itself.
         static string PeripheralFile(string key)
         {
             var file = FileName(key);
-            return file is InterruptsFile or DeviceFile or "memory.hpp" ? FileName(key + "_2") : file;
+            return file is InterruptsFile or DeviceFile or RegistersFile ? FileName(key + "_2") : file;
         }
+
+        // The register building blocks (namespace mmio) are a C++ file of this
+        // repository, embedded in the generator and written as it is: the
+        // generated headers depend on nothing but the standard library.
+        static string Registers()
+        {
+            using var stream = typeof(Emitter).Assembly.GetManifestResourceStream(RegistersFile)
+                ?? throw new InvalidOperationException($"{RegistersFile} is not embedded in the generator");
+            using var reader = new System.IO.StreamReader(stream, Encoding.UTF8);
+            return reader.ReadToEnd();
+        }
+
+        // This file does not derive from the SVD: it carries its own license
+        // (in its header comment), not the notice of the SVD, and it is the
+        // same for every device.
+        static string RegistersBanner(string generatorVersion) =>
+            $"{BannerStart} {generatorVersion}; do not edit.\n\n";
 
         static string Normalize(StringBuilder sb) => sb.ToString().Replace("\r\n", "\n");
 
@@ -93,21 +112,6 @@ namespace SvdGenerator
             AppendLines(sb, "");
             return sb.ToString();
         }
-
-        // Declared in every peripheral header, never defined. A field constructor
-        // calls it when its argument is a constant that does not fit the field:
-        // the compiler then stops on the attribute (GCC, once it optimises) or on
-        // a call that is not constexpr (any compiler, in a constant expression).
-        // A value only known at run time is masked to the width of the field.
-        const string Support =
-            "namespace detail\n" +
-            "{\n" +
-            "#if __has_cpp_attribute(gnu::error)\n" +
-            "[[gnu::error(\"this constant does not fit the register field it is given to\")]]\n" +
-            "#endif\n" +
-            "void field_value_out_of_range();\n" +
-            "} // detail\n" +
-            "\n";
 
         static string Interrupts(Device device, string ns)
         {
@@ -271,7 +275,7 @@ namespace SvdGenerator
             sb.AppendLine();
             var rangeCheck = IsExactType(width) ? "" : " & range";
             var defaultValue = width == 1 ? " = true" : "";
-            var body = IsExactType(width) ? "{}" : "{ if (__builtin_constant_p(value) && value > range) detail::field_value_out_of_range(); }";
+            var body = IsExactType(width) ? "{}" : "{ if (__builtin_constant_p(value) && value > range) mmio::detail::field_value_out_of_range(); }";
             sb.AppendLine($"\tconstexpr {className}({ValueType(width)} value{defaultValue}) : value_(value{rangeCheck}) {body}");
             sb.AppendLine($"\tconstexpr operator {ValueType(width)}() const {{return value_;}}");
 
@@ -284,16 +288,16 @@ namespace SvdGenerator
                     ? $"\tconstexpr operator {regClassName}() const {{return value_ ? mask : 0;}}"
                     : $"\tconstexpr operator {regClassName}() const {{return static_cast<{ValueType(width + offset)}>(static_cast<{ValueType(width + offset)}>(value_) << offset);}}");
 
-                sb.AppendLine($"\tconstexpr operator opsy::utility::clear_set<{regClassName}>() const {{return opsy::utility::clear_set<{regClassName}>(mask, *this);}}");
+                sb.AppendLine($"\tconstexpr operator mmio::clear_set<{regClassName}>() const {{return mmio::clear_set<{regClassName}>(mask, *this);}}");
                 sb.AppendLine($"\tconstexpr auto operator|({regClassName} other) const -> {regClassName} {{ return static_cast<{regClassName}>(*this) | other.value_;}}");
-                sb.AppendLine($"\tconstexpr auto operator||(opsy::utility::clear_set<{regClassName}> other) const -> opsy::utility::clear_set<{regClassName}> {{return opsy::utility::clear_set<{regClassName}>({regClassName}(mask) | other.clear(), *this | other.set()); }}");
+                sb.AppendLine($"\tconstexpr auto operator||(mmio::clear_set<{regClassName}> other) const -> mmio::clear_set<{regClassName}> {{return mmio::clear_set<{regClassName}>({regClassName}(mask) | other.clear(), *this | other.set()); }}");
             }
 
             // Without this, `a | b` between two fields that do not combine falls
             // back to the built-in | on their values, and the resulting integer
             // converts to any register.
             sb.AppendLine(field.Access != Access.ReadOnly
-                ? $"\ttemplate<typename T> requires (std::is_class_v<T> && !std::is_convertible_v<T, {regClassName}> && !std::is_same_v<T, opsy::utility::atomic_tag>) void operator|(T) const = delete; // a field of another register, or a read-only field, is not part of this register's value"
+                ? $"\ttemplate<typename T> requires (std::is_class_v<T> && !std::is_convertible_v<T, {regClassName}> && !std::is_same_v<T, mmio::atomic_tag>) void operator|(T) const = delete; // a field of another register, or a read-only field, is not part of this register's value"
                 : $"\ttemplate<typename T> requires std::is_class_v<T> void operator|(T) const = delete; // a read-only field is not part of the value written to the register");
 
             sb.AppendLine();
@@ -344,7 +348,7 @@ namespace SvdGenerator
             sb.AppendLine($"\tconstexpr auto operator ^({className} other) const -> {className} {{ return value_ ^ other.value_; }}");
             sb.AppendLine($"\tconstexpr auto operator ~() const -> {className} {{ return ~value_; }}");
             sb.AppendLine($"\tconstexpr bool operator ==(const {className}&) const = default;");
-            sb.AppendLine($"\tauto operator ||(opsy::utility::atomic_tag) const = delete; // a register value is built with |; put || between the fields of a <<= to clear and set them");
+            sb.AppendLine($"\tauto operator ||(mmio::atomic_tag) const = delete; // a register value is built with |; put || between the fields of a <<= to clear and set them");
             sb.AppendLine($"\t[[nodiscard]] constexpr auto value() const {{ return value_; }}");
 
             sb.AppendLine();
@@ -487,7 +491,7 @@ namespace SvdGenerator
             // anonymous union by standard C++); any other lane has to live in
             // a NAMED struct field (`struct { ... } _lane_N;`) because GCC's
             // anonymous-struct extension forbids non-POD members and
-            // opsy::utility::memory holds a std::atomic, so it is not POD.
+            // mmio::memory holds a std::atomic, so it is not POD.
             // Trade-off: byte/half aliases get accessed as
             // `peripheral._lane_N.fooN` instead of `peripheral.fooN`.
             long currentOffset = 0;
@@ -500,7 +504,7 @@ namespace SvdGenerator
 
                 var leadingPadding = groupStart - currentOffset;
                 if (leadingPadding > 0)
-                    sb.AppendLine($"\topsy::utility::padding<{leadingPadding}> _p{currentOffset};");
+                    sb.AppendLine($"\tmmio::padding<{leadingPadding}> _p{currentOffset};");
 
                 var lanes = PartitionLanes(group);
 
@@ -538,7 +542,7 @@ namespace SvdGenerator
             // An element of an array of clusters is as long as the distance to
             // the next element.
             if (paddedSize is { } size && size > currentOffset)
-                sb.AppendLine($"\topsy::utility::padding<{size - currentOffset}> _p{currentOffset};");
+                sb.AppendLine($"\tmmio::padding<{size - currentOffset}> _p{currentOffset};");
 
             sb.AppendLine("};");
 
@@ -617,16 +621,16 @@ namespace SvdGenerator
             foreach (var member in lane)
             {
                 if (member.Offset > cursor)
-                    sb.AppendLine($"{indent}opsy::utility::padding<{member.Offset - cursor}> _p{cursor};");
+                    sb.AppendLine($"{indent}mmio::padding<{member.Offset - cursor}> _p{cursor};");
 
                 var extent = member.IsArray ? $"[{member.Count}]" : string.Empty;
                 if (member is Register r)
                 {
                     var template = r.Access switch
                     {
-                        Access.ReadOnly => "opsy::utility::read_only_memory",
-                        Access.WriteOnly => "opsy::utility::write_only_memory",
-                        _ => "opsy::utility::memory",
+                        Access.ReadOnly => "mmio::read_only_memory",
+                        Access.WriteOnly => "mmio::write_only_memory",
+                        _ => "mmio::memory",
                     };
                     sb.AppendLine($"{indent}{template}<{ValueType(r.Size)},{classNames[r]}> {Member(r.Name)}{extent};");
                 }
