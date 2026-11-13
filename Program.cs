@@ -31,6 +31,7 @@ namespace SvdGenerator
 
             var check = false;
             var force = false;
+            var list = false;
             var positional = new List<string>();
             foreach (var arg in args)
             {
@@ -38,6 +39,7 @@ namespace SvdGenerator
                 {
                     case "--check": check = true; break;
                     case "--force": force = true; break;
+                    case "--list": list = true; break;
                     default:
                         if (arg.StartsWith("--", StringComparison.Ordinal))
                         {
@@ -50,20 +52,35 @@ namespace SvdGenerator
                 }
             }
 
-            if (positional.Count != 2)
+            // --list names the files without writing them, so it can do without a
+            // directory; with one, it gives their paths in it.
+            var expected = list ? positional.Count is 1 or 2 : positional.Count == 2;
+            if (!expected || (list && (check || force)))
             {
+                if (list && (check || force))
+                    error.WriteLine("--list writes nothing: it does not go with --check or --force");
                 PrintUsage(error);
                 return ExitError;
             }
 
             var input = positional[0];
-            var directory = positional[1];
+            var directory = positional.Count > 1 ? positional[1] : string.Empty;
 
             try
             {
                 // Everything is generated in memory first: a file that cannot be
                 // read or converted leaves the output directory as it was.
                 var files = Emitter.Emit(SvdReader.Read(input), GeneratorVersion);
+
+                if (list)
+                {
+                    // One per line, with forward slashes whatever the platform:
+                    // the list is meant for a build system.
+                    var prefix = directory.Length == 0 ? string.Empty : directory.Replace('\\', '/').TrimEnd('/') + "/";
+                    foreach (var name in files.Keys)
+                        output.Write($"{prefix}{name}\n");
+                    return ExitOk;
+                }
 
                 if (check)
                 {
@@ -110,6 +127,7 @@ namespace SvdGenerator
         static void PrintUsage(TextWriter w)
         {
             w.WriteLine("Usage: SvdGenerator <input.svd> <output_dir> [--check] [--force]");
+            w.WriteLine("       SvdGenerator <input.svd> [<output_dir>] --list");
             w.WriteLine();
             w.WriteLine("Generates typed C++ peripheral headers for ARM Cortex-M targets");
             w.WriteLine("from a CMSIS-SVD file.");
@@ -122,6 +140,9 @@ namespace SvdGenerator
             w.WriteLine("                 what would be generated.");
             w.WriteLine("  --force        Overwrite a file of the same name that SvdGenerator");
             w.WriteLine("                 did not write.");
+            w.WriteLine("  --list         Write nothing; print the files that would be generated,");
+            w.WriteLine("                 one per line, for a build system that wants them as");
+            w.WriteLine("                 the outputs of a rule.");
             w.WriteLine("  -h, --help     Show this help and exit.");
             w.WriteLine("  -v, --version  Show version and exit.");
             w.WriteLine();
