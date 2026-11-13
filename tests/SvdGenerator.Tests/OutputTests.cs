@@ -99,7 +99,7 @@ namespace SvdGenerator.Tests
             var (code, error) = Run(input, SimpleDevice(), output.Path);
 
             Assert.Equal((Program.ExitOk, ""), (code, error));
-            Assert.Equal(new[] { "CMakeLists.txt", "device.ld", "interrupts.hpp", "memory.hpp", "p.hpp" }, output.Names());
+            Assert.Equal(new[] { "CMakeLists.txt", "device.hpp", "device.ld", "interrupts.hpp", "memory.hpp", "p.hpp" }, output.Names());
             Assert.Equal("// opsy\n", File.ReadAllText(output.File("memory.hpp")));
         }
 
@@ -113,7 +113,7 @@ namespace SvdGenerator.Tests
 
             Run(input, SimpleDevice("NEW"), output.Path);
 
-            Assert.Equal(new[] { "interrupts.hpp", "new.hpp" }, output.Names());
+            Assert.Equal(new[] { "device.hpp", "interrupts.hpp", "new.hpp" }, output.Names());
         }
 
         [Fact]
@@ -129,7 +129,7 @@ namespace SvdGenerator.Tests
             var (code, _) = Run(input, SimpleDevice(), output.Path);
 
             Assert.Equal(Program.ExitOk, code);
-            Assert.Equal(new[] { "interrupts.hpp", "p.hpp" }, output.Names());
+            Assert.Equal(new[] { "device.hpp", "interrupts.hpp", "p.hpp" }, output.Names());
             Assert.StartsWith(Emitter.BannerStart, File.ReadAllText(output.File("p.hpp")), StringComparison.Ordinal);
         }
 
@@ -166,7 +166,7 @@ namespace SvdGenerator.Tests
             Assert.Equal(Program.ExitError, code);
             Assert.Contains("24 bits", error);
             Assert.DoesNotContain("   at ", error);
-            Assert.Equal(new[] { "interrupts.hpp", "p.hpp" }, output.Names());
+            Assert.Equal(new[] { "device.hpp", "interrupts.hpp", "p.hpp" }, output.Names());
             Assert.Equal(before, File.ReadAllText(output.File("p.hpp")));
         }
 
@@ -252,12 +252,15 @@ namespace SvdGenerator.Tests
             Assert.Contains("Unknown option --chekc", error.ToString());
         }
 
-        [Fact]
-        public void Two_groups_with_the_same_file_name_both_get_a_file()
+        [Theory]
+        [InlineData("DEVICE", "device_2.hpp")]
+        [InlineData("INTERRUPTS", "interrupts_2.hpp")]
+        [InlineData("MEMORY", "memory_2.hpp")]
+        public void A_peripheral_does_not_take_the_name_of_another_header(string peripheral, string file)
         {
-            var files = Generate(Device(Peripheral("usb", 0x1000, SimpleRegister()) + Peripheral("USB", 0x2000, SimpleRegister())));
+            var files = Generate(Device(Peripheral(peripheral, 0x1000, SimpleRegister())));
 
-            Assert.Equal(new[] { "interrupts.hpp", "usb.hpp", "usb_2.hpp" }, files.Keys.ToArray());
+            Assert.Equal(new[] { "device.hpp", file, "interrupts.hpp" }.OrderBy(n => n, StringComparer.Ordinal), files.Keys);
         }
     }
 }

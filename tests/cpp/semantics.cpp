@@ -3,17 +3,21 @@
 
 #include <FIXTURE/bank.hpp>
 #include <FIXTURE/ctl.hpp>
+#include <FIXTURE/device.hpp>
 #include <FIXTURE/dma.hpp>
 #include <FIXTURE/interrupts.hpp>
 #include <FIXTURE/port.hpp>
 
+#include <string_view>
 #include <type_traits>
 
 using namespace FIXTURE;
 
-// ── Fields: position, mask, conversion to the register value ───────────────
-using cr = ctl_p::ctl_cr_r;
+// ── Names: the peripheral's name is not repeated in its registers ──────────
+// CTL_CR of peripheral CTL is ctl.cr, of class ctl_p::cr_r.
+using cr = ctl_p::cr_r;
 
+// ── Fields: position, mask, conversion to the register value ───────────────
 static_assert(cr::en_f::offset == 0 && cr::en_f::width == 1 && cr::en_f::mask == 0x1);
 static_assert(cr::mode_f::offset == 4 && cr::mode_f::width == 3 && cr::mode_f::mask == 0x70);
 static_assert(cr::div_f::mask == 0x01FF0000u && cr::div_f::range == 0x1FF);
@@ -24,6 +28,15 @@ static_assert(cr(cr::en_f(false)).value() == 0x0);
 static_assert(cr(cr::mode_f(5)).value() == 0x50);
 static_assert(cr(cr::div_f(0x1FF)).value() == 0x01FF0000u);
 static_assert((cr::en_f() | cr::mode_f(1) | cr::div_f(2)).value() == 0x00020011u);
+
+// ── Named values: objects of the field's type, used like any field ─────────
+static_assert(cr(cr::mode_f::fast).value() == 0x50);
+static_assert((cr::mode_f::slow | cr::en_f()).value() == 0x11);
+static_assert(cr(0x50).mode() == cr::mode_f::fast);
+static_assert(cr(0x10).mode() != cr::mode_f::fast);
+static_assert(std::is_same_v<decltype(cr::mode_f::off), const cr::mode_f>);
+constexpr opsy::utility::clear_set<cr> to_fast = cr::mode_f::fast || cr::en_f();
+static_assert(to_fast.clear().value() == 0x71 && to_fast.set().value() == 0x51);
 
 // ── Registers: accessors, operators, reset value ───────────────────────────
 static_assert(cr(0x50).mode() == 5);
@@ -38,8 +51,8 @@ static_assert(cr(0x51) == cr(0x51) && cr(0x51) != cr(0x50));
 static_assert((cr(0x51) & cr::en_f()) == cr::en_f());
 static_assert(cr::reset_value == 0x10);
 static_assert(std::is_same_v<decltype(cr(0).value()), uint32_t>);
-static_assert(std::is_same_v<decltype(ctl_p::ctl_small_r(0).value()), uint8_t>);
-static_assert(ctl_p::ctl_small_r(ctl_p::ctl_small_r::nib_f(0xA)).value() == 0xA0);
+static_assert(std::is_same_v<decltype(ctl_p::small_r(0).value()), uint8_t>);
+static_assert(ctl_p::small_r(ctl_p::small_r::nib_f(0xA)).value() == 0xA0);
 
 // ── clear_set: what `reg <<= a || b` clears and sets ───────────────────────
 constexpr opsy::utility::clear_set<cr> update = cr::mode_f(1) || cr::div_f(3);
@@ -48,20 +61,16 @@ static_assert(update.set().value() == (0x10u | 0x00030000u));
 
 // ── Layout ─────────────────────────────────────────────────────────────────
 static_assert(sizeof(ctl_p) == 0x18);
-static_assert(offsetof(ctl_p, ctl_data) == 0x10);
-static_assert(offsetof(ctl_p, ctl_small) == 0x14);
-static_assert(offsetof(dma_p, dma_c2tr3) == 0x58);
-static_assert(offsetof(bank_p, slot2_cnt) == 0x28);
-static_assert(offsetof(bank_p, key3) == 0x4C);
-static_assert(offsetof(bank_p, word) == 0x50);
+static_assert(offsetof(ctl_p, data) == 0x10);
+static_assert(offsetof(ctl_p, small) == 0x14);
 
 // ── Register storage follows the register's access ─────────────────────────
-static_assert(std::is_same_v<decltype(porta_p::porta_bsrr), opsy::utility::write_only_memory<uint32_t, porta_p::porta_bsrr_r>>);
-static_assert(std::is_same_v<decltype(dma_p::dma_isr), opsy::utility::read_only_memory<uint32_t, dma_p::dma_isr_r>>);
-static_assert(std::is_same_v<decltype(ctl_p::ctl_cr), opsy::utility::memory<uint32_t, cr>>);
+static_assert(std::is_same_v<decltype(port_p::bsrr), opsy::utility::write_only_memory<uint32_t, port_p::bsrr_r>>);
+static_assert(std::is_same_v<decltype(dma_p::isr), opsy::utility::read_only_memory<uint32_t, dma_p::isr_r>>);
+static_assert(std::is_same_v<decltype(ctl_p::cr), opsy::utility::memory<uint32_t, cr>>);
 // ... and, when the SVD states the access on the fields only, what they have in common.
-static_assert(std::is_same_v<decltype(ctl_p::ctl_sr), opsy::utility::read_only_memory<uint32_t, ctl_p::ctl_sr_r>>);
-static_assert(std::is_same_v<decltype(ctl_p::ctl_icr), opsy::utility::write_only_memory<uint32_t, ctl_p::ctl_icr_r>>);
+static_assert(std::is_same_v<decltype(ctl_p::sr), opsy::utility::read_only_memory<uint32_t, ctl_p::sr_r>>);
+static_assert(std::is_same_v<decltype(ctl_p::icr), opsy::utility::write_only_memory<uint32_t, ctl_p::icr_r>>);
 
 // ── A read-only field is read, never written ───────────────────────────────
 static_assert(!std::is_convertible_v<cr::rdy_f, cr>);
@@ -74,32 +83,93 @@ static_assert(cr::rdy_f::mask == 0x2);
 static_assert(cr(cr::mode_f(7)).value() == 0x70);
 static_assert(cr(cr::div_f(511)).value() == 0x01FF0000u);
 
-// ── Instances ──────────────────────────────────────────────────────────────
-static_assert(std::is_same_v<decltype(porta), porta_p&>);
-static_assert(std::is_same_v<decltype(portc), porta_p&>);
+// ── One type for peripherals with the same registers ───────────────────────
+// PORTA and PORTB are described separately, under PORTA_ and PORTB_ names and
+// with different reset values; PORTC derives from PORTA.
+static_assert(std::is_same_v<decltype(porta), port_p&>);
+static_assert(std::is_same_v<decltype(portb), port_p&>);
+static_assert(std::is_same_v<decltype(portc), port_p&>);
+// The reset value all ports share stays on the register class, the others are per port.
+static_assert(port_p::bsrr_r::reset_value == 0);
+static_assert(porta_reset::moder == 0xABFFFFFFu);
+static_assert(portb_reset::moder == 0xFFFFFEBFu);
+static_assert(portc_reset::moder == 0xABFFFFFFu);
 
-// ── Interrupts ─────────────────────────────────────────────────────────────
-static_assert(irq_count == 9);
-static_assert(CTL_IRQn == 2 && CTL_ERR_IRQn == 5 && DMA1_CH0_IRQn == 8);
+// ── Numbered registers as an array ─────────────────────────────────────────
+// DMA_C0CR, DMA_C0SAR, DMA_C1CR, ... are dma1.c[n].cr and dma1.c[n].sar.
+static_assert(std::is_same_v<decltype(dma_p::c), dma_p::c_c[3]>);
+static_assert(sizeof(dma_p::c_c) == 0x20);
+static_assert(offsetof(dma_p, c) == 0x10);
+static_assert(offsetof(dma_p::c_c, cr) == 0x0);
+static_assert(offsetof(dma_p::c_c, sar) == 0x4);
+// What only the last channel has is given to all, as in the vendor's C headers.
+static_assert(offsetof(dma_p::c_c, tr3) == 0x8);
+static_assert(dma_p::c_c::cr_r::twod_f::mask == 0x100);
+static_assert(sizeof(dma_p) == 0x10 + 3 * 0x20);
+
+// ── SVD clusters and register arrays ───────────────────────────────────────
+static_assert(std::is_same_v<decltype(bank_p::slot), bank_p::slot_c[3]>);
+static_assert(sizeof(bank_p::slot_c) == 0x10);
+static_assert(offsetof(bank_p::slot_c, cnt) == 0x8);
+static_assert(std::is_same_v<decltype(bank_p::slot_c::cnt), opsy::utility::memory<uint16_t, bank_p::slot_c::cnt_r>>);
+static_assert(std::is_same_v<decltype(bank_p::key), opsy::utility::memory<uint32_t, bank_p::key_r>[4]>);
+static_assert(offsetof(bank_p, key) == 0x40);
+// Registers that overlap: the widest one directly, the others in a lane.
+static_assert(offsetof(bank_p, word) == 0x50);
+static_assert(offsetof(bank_p, _lane_0.byte1) == 0x51);
+
+// ── Interrupts and device description, in the device namespace ─────────────
+static_assert(FIXTURE::irq_count == 9);
+static_assert(FIXTURE::CTL_IRQn == 2 && FIXTURE::CTL_ERR_IRQn == 5 && FIXTURE::DMA1_CH0_IRQn == 8);
+static_assert(std::is_same_v<std::underlying_type_t<FIXTURE::IRQn_Type>, std::uint16_t>);
+static_assert(std::string_view(FIXTURE::device_name) == "FIXTURE");
+static_assert(std::string_view(FIXTURE::cpu_name) == "CM33");
+static_assert(FIXTURE::nvic_priority_bits == 3);
+static_assert(FIXTURE::has_mpu && !FIXTURE::has_fpu);
 
 // ── The statements a driver writes must compile ────────────────────────────
+template<typename TPort>
+void make_output(TPort& port)
+{
+	using opsy::utility::atomic;
+	port.moder <<= port_p::moder_r::mode0_f(1) || atomic;
+}
+
+void take_irq(std::uint32_t) {}
+
 void driver()
 {
 	using opsy::utility::atomic;
 
-	ctl.ctl_cr = cr::en_f() | cr::mode_f(1);
-	ctl.ctl_cr |= cr::en_f();
-	ctl.ctl_cr |= cr::en_f() | atomic;
-	ctl.ctl_cr <<= cr::mode_f(2);
-	ctl.ctl_cr <<= cr::mode_f(2) || cr::div_f(7);
-	ctl.ctl_cr <<= cr::mode_f(2) || cr::div_f(7) || atomic;
-	while (!ctl.ctl_cr.load().rdy()) {}
-	if (ctl.ctl_cr.load().mode() != 2u) {}
-	if ((ctl.ctl_cr.load() & cr::en_f()) == cr::en_f()) {}
-	while (ctl.ctl_sr.load().busy()) {}
-	ctl.ctl_icr = ctl_p::ctl_icr_r::cbusy_f();
+	ctl.cr = cr::en_f() | cr::mode_f(1);
+	ctl.cr = cr::en_f() | cr::mode_f::fast;
+	ctl.cr |= cr::en_f();
+	ctl.cr |= cr::en_f() | atomic;
+	ctl.cr <<= cr::mode_f(2);
+	ctl.cr <<= cr::mode_f::slow || cr::div_f(7);
+	ctl.cr <<= cr::mode_f(2) || cr::div_f(7) || atomic;
+	while (!ctl.cr.load().rdy()) {}
+	if (ctl.cr.load().mode() != 2u) {}
+	if (ctl.cr.load().mode() == cr::mode_f::fast) {}
+	if ((ctl.cr.load() & cr::en_f()) == cr::en_f()) {}
+	while (ctl.sr.load().busy()) {}
+	ctl.icr = ctl_p::icr_r::cbusy_f();
 	// A value only known at run time is masked to the field, not rejected.
-	ctl.ctl_cr <<= cr::mode_f(static_cast<uint8_t>(ctl.ctl_sr.load().level()));
-	porta.porta_bsrr = porta_p::porta_bsrr_r::bs0_f();
-	dma1.dma_c1cr = dma_p::dma_cxcr_r::en_f() | dma_p::dma_cxcr_r::prio_f(3);
+	ctl.cr <<= cr::mode_f(static_cast<uint8_t>(ctl.sr.load().level()));
+
+	// One function for every port.
+	make_output(porta);
+	make_output(portb);
+	porta.bsrr = port_p::bsrr_r::bs0_f();
+
+	// One loop for every channel.
+	using ch = dma_p::c_c;
+	for (auto& channel : dma1.c)
+		channel.cr = ch::cr_r::en_f() | ch::cr_r::prio_f(3);
+	dma1.c[1].sar = ch::sar_r::sa_f(0x20000000u);
+
+	bank.slot[2].cfg |= bank_p::slot_c::cfg_r::on_f();
+	bank.key[3] = bank_p::key_r::k_f(0xCAFEu);
+
+	take_irq(DMA1_CH0_IRQn);
 }
