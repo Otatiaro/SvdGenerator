@@ -191,15 +191,18 @@ Exit codes: 0 success, 1 error, 2 refused to overwrite, 3 out of date.
 // Source: STM32H563.svd (device STM32H563, version 1.7)
 // SHA-256: 3daa2bdf5fab3e6995c050489e6033326628fb6471d81e922bd3639b579e740f
 //
-// Notice carried by the source file:
+// What this file takes from the source file (names, addresses, descriptions)
+// remains under the notice that file carries:
 //
 //   Copyright (c) 2025 STMicroelectronics.
 //   ...
+//
+// SvdGenerator puts no license of its own on the code it generates around it.
 ```
 
 The notice is the comment that precedes the root element of the SVD and
-its `<licenseText>`: the generated headers derive from the SVD and carry
-its copyright and license. Line endings are LF on every platform.
+its `<licenseText>`, reproduced as it is. Line endings are LF on every
+platform. See [License](#license) for whose is what in a generated file.
 
 ## The generated API
 
@@ -588,4 +591,20 @@ Untagged local builds carry the version `0.0.0-dev`.
 
 ## License
 
-[MIT](LICENSE).
+The generator is under the [MIT](LICENSE) license. That license covers the
+generator, not what it generates. In a generated directory:
+
+- **The code the generator writes** (the classes, the operators, the
+  layout, the vector table) carries no license of SvdGenerator: the
+  generator puts none of its own on its output.
+- **What comes from the SVD file** is not the generator's to license. The
+  names and addresses are facts about the device; the descriptions are the
+  words of the author of the SVD file, copied as they are. The generated
+  files therefore reproduce the notice the SVD file carries, as an
+  attribution: it says where that content comes from and under which terms
+  its author published it, not that the file belongs to that author. Which
+  license your headers end up under follows from the terms of your SVD
+  file; read them.
+- **`mmio.hpp`** is the one file that is not generated from the SVD: it is
+  part of SvdGenerator, copied as it is, under the MIT license written in
+  its header.

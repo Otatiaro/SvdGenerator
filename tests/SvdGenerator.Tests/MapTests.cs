@@ -171,9 +171,36 @@ namespace SvdGenerator.Tests
             Assert.Contains("| Source | `test.svd` (device DEV, version 1.0) |\n", readme);
             Assert.Contains("| SHA-256 of the source | `0123abcd` |\n", readme);
             Assert.Contains("| Namespace | `DEV` |\n", readme);
-            Assert.Contains("## Notice carried by the source file\n", readme);
-            Assert.Contains("> Copyright (c) 2025 Vendor.  \n", readme);
             Assert.DoesNotContain('\r', readme);
+        }
+
+        [Fact]
+        public void The_readme_says_whose_is_what()
+        {
+            const string notice = "<!--\nCopyright (c) 2025 Vendor.\n-->\n";
+            var readme = Generate(Device(Peripheral("P", 0x1000, SimpleRegister()), prolog: notice))["README.md"];
+
+            // The notice of the source is an attribution of what comes from it,
+            // not a license put on the generated code, and mmio.hpp is apart.
+            Assert.Contains(
+                "## Whose is what\n\n" +
+                "- **What the headers take from the source file**, names, addresses and descriptions,\n" +
+                "  remains under the notice that file carries:\n\n" +
+                "  > Copyright (c) 2025 Vendor.  \n\n" +
+                "- **The code generated around it** carries no license of SvdGenerator: the generator puts\n" +
+                "  none of its own on what it generates.\n" +
+                "- **`mmio.hpp`** is not generated from the source file: it is part of SvdGenerator, under\n" +
+                "  the MIT license written in its header.\n", readme);
+            Assert.DoesNotContain("derive", readme);
+        }
+
+        [Fact]
+        public void The_readme_of_a_source_without_notice_invents_none()
+        {
+            var readme = Generate(Device(Peripheral("P", 0x1000, SimpleRegister())))["README.md"];
+
+            Assert.Contains("remains under the terms of that file, which carries no notice.\n", readme);
+            Assert.DoesNotContain("Copyright", readme);
         }
 
         [Fact]
