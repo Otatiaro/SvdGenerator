@@ -203,6 +203,11 @@ constexpr auto operator||(T value, [[maybe_unused]] atomic_tag ato)
  * @brief Read-write memory-mapped register storage.
  *        @tparam TInt The underlying integer type (uint8_t / uint16_t / uint32_t / uint64_t).
  *        @tparam TReg The strongly-typed register wrapper that converts to / from @c TInt.
+ *
+ *        The accessors of this class and of the two below are a single load or store, or a
+ *        short sequence around one: they are always inlined. Left to the optimizer, -Os keeps
+ *        them out of line, and every register access, every turn of a polling loop, pays a
+ *        call.
  */
 template<typename TInt, typename TReg>
 class memory
@@ -214,65 +219,65 @@ class memory
 
 public:
 
-	auto operator=(TReg value) -> memory&
+	[[gnu::always_inline]] auto operator=(TReg value) -> memory&
 	{
 		value_.store(value.value(), std::memory_order_relaxed);
 		return *this;
 	}
 
-	operator TReg() const
+	[[gnu::always_inline]] operator TReg() const
 	{
 		return load();
 	}
 
-	[[nodiscard]] auto load() const -> TReg
+	[[nodiscard, gnu::always_inline]] auto load() const -> TReg
 	{
 		return value_.load(std::memory_order_relaxed);
 	}
 
-	auto operator|=(atomic_t<TReg> value) -> memory&
+	[[gnu::always_inline]] auto operator|=(atomic_t<TReg> value) -> memory&
 	{
 		value_.fetch_or(value.value.value(), std::memory_order_relaxed);
 		return *this;
 	}
 
-	auto operator|=(TReg value) -> memory&
+	[[gnu::always_inline]] auto operator|=(TReg value) -> memory&
 	{
 		value_.store(value_.load(std::memory_order_relaxed) | value.value(), std::memory_order_relaxed);
 		return *this;
 	}
 
-	auto operator&=(atomic_t<TReg> value) -> memory&
+	[[gnu::always_inline]] auto operator&=(atomic_t<TReg> value) -> memory&
 	{
 		value_.fetch_and(value.value.value(), std::memory_order_relaxed);
 		return *this;
 	}
 
-	auto operator&=(TReg value) -> memory&
+	[[gnu::always_inline]] auto operator&=(TReg value) -> memory&
 	{
 		value_.store(value_.load(std::memory_order_relaxed) & value.value(), std::memory_order_relaxed);
 		return *this;
 	}
 
-	auto operator^=(atomic_t<TReg> value) -> memory&
+	[[gnu::always_inline]] auto operator^=(atomic_t<TReg> value) -> memory&
 	{
 		value_.fetch_xor(value.value.value(), std::memory_order_relaxed);
 		return *this;
 	}
 
-	auto operator^=(TReg value) -> memory&
+	[[gnu::always_inline]] auto operator^=(TReg value) -> memory&
 	{
 		value_.store(value_.load(std::memory_order_relaxed) ^ value.value(), std::memory_order_relaxed);
 		return *this;
 	}
 
-	auto operator<<=(clear_set<TReg> value) -> memory&
+	[[gnu::always_inline]] auto operator<<=(clear_set<TReg> value) -> memory&
 	{
 		value_.store((value_.load(std::memory_order_relaxed) & ~value.clear().value()) | value.set().value(), std::memory_order_relaxed);
 		return *this;
 	}
 
-	auto operator<<=(atomic_t<clear_set<TReg>> value) -> memory&
+	[[gnu::always_inline]] auto operator<<=(atomic_t<clear_set<TReg>> value) -> memory&
 	{
 		auto previous = value_.load(std::memory_order_relaxed);
 		while (!value_.compare_exchange_strong(previous, (previous & ~value.value.clear().value()) | value.value.set().value(), std::memory_order_relaxed));
@@ -296,12 +301,12 @@ class read_only_memory
 
 public:
 
-	operator TReg() const
+	[[gnu::always_inline]] operator TReg() const
 	{
 		return load();
 	}
 
-	[[nodiscard]] auto load() const -> TReg
+	[[nodiscard, gnu::always_inline]] auto load() const -> TReg
 	{
 		return value_.load(std::memory_order_relaxed);
 	}
@@ -323,7 +328,7 @@ class write_only_memory
 
 public:
 
-	auto operator=(TReg value) -> write_only_memory&
+	[[gnu::always_inline]] auto operator=(TReg value) -> write_only_memory&
 	{
 		value_.store(value.value(), std::memory_order_relaxed);
 		return *this;
